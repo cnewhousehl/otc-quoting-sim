@@ -17,7 +17,7 @@ export default function SessionView({ startConfig, onExit }) {
       <NewsBar state={state} />
       <div className="desk-body">
         <aside className="rfq-col">
-          <RfqInbox sim={sim} denom={denom} presets={presets} />
+          <RfqInbox sim={sim} presets={presets} />
         </aside>
         <aside className="manage-col">
           <Positions sim={sim} denom={denom} />
@@ -86,21 +86,21 @@ function NewsBar({ state }) {
 }
 
 // ---- left: RFQ inbox + live quotes -----------------------------------------
-function RfqInbox({ sim, denom, presets }) {
+function RfqInbox({ sim, presets }) {
   const { state } = sim
   return (
     <div className="panel fill">
       <div className="panel-h">RFQs <span className="badge">{state.pendingRfqs.length}</span></div>
       <div className="scroll">
         {state.pendingRfqs.length === 0 && <div className="empty">waiting for inbound…</div>}
-        {state.pendingRfqs.map((r) => <RfqCard key={r.id} rfq={r} sim={sim} denom={denom} presets={presets} />)}
+        {state.pendingRfqs.map((r) => <RfqCard key={r.id} rfq={r} sim={sim} presets={presets} />)}
         <LiveQuotes sim={sim} />
       </div>
     </div>
   )
 }
 
-function RfqCard({ rfq, sim, denom, presets }) {
+function RfqCard({ rfq, sim, presets }) {
   const venue = sim.venuesForAsset(rfq.assetId)[0]
   const mid = sim.getBook(venue)?.mid ?? rfq.refPrice
   const [w, setW] = useState(8)
