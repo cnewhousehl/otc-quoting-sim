@@ -56,9 +56,10 @@ export function buildDriftPath({ deltaTox, N, rho }, sigmaReturn) {
 // for a tick. Drift only enters M_t once a toxic fill activates it (Q3).
 export function createToxicDrift() {
   const active = []
-  // χ: +1 if the client BOUGHT (student is short → adverse is up); −1 if sold.
-  function activate({ assetId, path, startTick, clientBuys }) {
-    active.push({ assetId, path, startTick, sign: clientBuys ? 1 : -1 })
+  // χ: explicit `sign` (e.g. the informed client's bias direction) if given,
+  // else +1 if the client BOUGHT (student short → adverse up) / −1 if sold.
+  function activate({ assetId, path, startTick, sign, clientBuys }) {
+    active.push({ assetId, path, startTick, sign: sign ?? (clientBuys ? 1 : -1) })
   }
   function injectionAt(n) {
     const out = {}

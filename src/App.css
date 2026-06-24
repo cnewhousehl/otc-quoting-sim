@@ -323,3 +323,9 @@ body {
 .news-head.dim { color: var(--dim); }
 .news-head em { color: var(--dim); font-style: normal; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; }
 .news-next { color: var(--dim); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+/* client bias badge */
+.bias { margin-left: 6px; font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em; padding: 1px 5px; border-radius: 3px; border: 1px solid; }
+.bias.bullish { color: var(--bid); border-color: var(--bid); }
+.bias.bearish { color: var(--ask); border-color: var(--ask); }
+.bias.neutral { color: var(--dim); border-color: var(--grid); }

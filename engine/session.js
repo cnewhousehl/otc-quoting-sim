@@ -11,7 +11,7 @@
 // addressed by stable entity key, so the log is a pure function of
 // (seed, config, actions) — replayable byte-for-byte.
 
-import { createRng } from './rng.js'
+import { createRng, STREAMS } from './rng.js'
 import { createPriceProcess } from './price.js'
 import { createBook } from './book.js'
 import { createPnL } from './pnl.js'
@@ -50,6 +50,24 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
   const assetIds = price.assetIds()
   for (const id of assetIds) pnl.setMark(id, price.mid(id))
   book.tick(0)
+
+  // Market sentiment per asset: news pushes it, then it fades. Drives client
+  // directional bias (willingness to cross the spread / informed conviction).
+  const sentiment = {}
+  for (const id of assetIds) sentiment[id] = 0
+  const SENT_DECAY = Math.exp(-dt / 90) // news bias fades over ~1.5 min
+  const MAG_W = { small: 0.3, medium: 0.6, large: 1.0 }
+
+  function assignBias(rfq) {
+    const sent = sentiment[rfq.assetId] ?? 0
+    const z = rng.normal(STREAMS.rfqSpec, rfq.tick, rfq.id, 6)
+    // Sharp clients carry informed conviction (predicts the drift); retail herds
+    // on sentiment with more noise.
+    const bias = rfq.archetype === 'sharp' ? Math.tanh(1.6 * z + 0.8 * sent) : Math.tanh(1.2 * sent + 0.7 * z)
+    rfq.bias = bias
+    rfq.biasLabel = bias > 0.2 ? 'bullish' : bias < -0.2 ? 'bearish' : 'neutral'
+    rfq.biasShown = diff.transparency === 'full' // revealed on Easy
+  }
 
   const totalTicks = Math.round((cfg.sessionMinutes * 60) / dt)
   let n = 0
@@ -124,20 +142,26 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
     }
     pnl.onTick(attr)
 
-    // (5a) news catalyst — pivots the true mid over a horizon
+    // sentiment fades each tick
+    for (const id of assetIds) sentiment[id] *= SENT_DECAY
+
+    // (5a) news catalyst — pivots the true mid and shifts sentiment
     const newsEv = news.step(n)
     if (newsEv) {
       recentNews.unshift(newsEv)
       if (recentNews.length > 8) recentNews.pop()
+      const dw = newsEv.direction * MAG_W[newsEv.magnitude]
+      for (const a of newsEv.assets) sentiment[a] = Math.max(-1.5, Math.min(1.5, (sentiment[a] ?? 0) + dw))
       events.push(emit({ type: 'news', catId: newsEv.catId, headline: newsEv.headline, scope: newsEv.scope, assets: newsEv.assets, direction: newsEv.direction, magnitude: newsEv.magnitude }))
     }
 
-    // (5) create an RFQ (toxicity pre-sampled at creation)
+    // (5) create an RFQ (toxicity + bias pre-sampled at creation)
     const rfq = rfqGen.step(n, pending.size)
     if (rfq) {
+      assignBias(rfq)
       rfqs.set(rfq.id, rfq)
       pending.set(rfq.id, rfq)
-      events.push(emit({ type: 'rfq_new', rfqId: rfq.id, clientId: rfq.clientId, handle: rfq.handle, archetype: rfq.archetype, isToxic: rfq.isToxic, assetId: rfq.assetId, sizeX: rfq.size }))
+      events.push(emit({ type: 'rfq_new', rfqId: rfq.id, clientId: rfq.clientId, handle: rfq.handle, archetype: rfq.archetype, isToxic: rfq.isToxic, assetId: rfq.assetId, sizeX: rfq.size, bias: rfq.biasShown ? rfq.biasLabel : null }))
     }
 
     // (6) expire un-quoted RFQs and TTL'd quotes
@@ -158,6 +182,7 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
       const rfqObj = rfqs.get(q.rfqId)
       const entry = clientById(q.clientId) ?? { id: q.clientId, archetype: q.archetype, size: { medianX: q.size } }
       const client = resolveClient(entry, diff)
+      client.bias = rfqObj?.bias ?? 0 // directional willingness to cross
       const mid = price.mid(q.assetId)
       const sigmaM = price.sigmaM(q.assetId)
       const res = evaluateQuoteFill({ quote: q, mid, sigmaM, n, dt, rng, client, diff: diffHaz })
@@ -167,10 +192,12 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
       pnl.onClientFill({ assetId: q.assetId, clientBuys: res.clientBuys, size: q.size, price: res.price, fee, meta: { quoteId: q.id, clientId: q.clientId } })
       quotes.markFilled(q.id, res, n)
 
-      // toxic drift activates on fill (Q3)
+      // toxic drift activates on fill (Q3); for informed flow the drift follows
+      // the client's BIAS (their view), so you can pre-position against it.
       if (rfqObj?.isToxic) {
         const path = buildDriftPath(diff.toxic, sigmaM / mid)
-        toxicDrift.activate({ assetId: q.assetId, path, startTick: n + 1, clientBuys: res.clientBuys })
+        const sign = rfqObj.bias ? Math.sign(rfqObj.bias) : res.clientBuys ? 1 : -1
+        toxicDrift.activate({ assetId: q.assetId, path, startTick: n + 1, sign })
       }
       const p = pnl.snapshot()
       events.push(emit({
@@ -216,6 +243,7 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
       hedgeLog: p.hedgeLog,
       news: recentNews.slice(0, 5),
       nextNewsSec: news.ticksToNext(n) * dt,
+      sentiment: { ...sentiment },
     }
   }
 

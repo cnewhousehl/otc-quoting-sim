@@ -70,8 +70,13 @@ export function evaluateQuoteFill({ quote, mid, sigmaM, n, dt, rng, client, diff
   const eAsk = (mid - quote.ask) / sigmaM
   const eBid = (quote.bid - mid) / sigmaM
 
-  const hAsk = fillHazard({ e: eAsk, ageSec, size: quote.size, client, diff })
-  const hBid = fillHazard({ e: eBid, ageSec, size: quote.size, client, diff })
+  // Directional bias: a bullish client (bias>0) is keener to LIFT (buy the ask)
+  // even when it's wide, and less keen to hit; bearish is the mirror. This is how
+  // news sentiment and informed conviction tilt willingness to cross the spread.
+  const bias = client.bias ?? 0
+  const biasBeta = 0.9
+  const hAsk = fillHazard({ e: eAsk, ageSec, size: quote.size, client, diff }) * Math.exp(biasBeta * bias)
+  const hBid = fillHazard({ e: eBid, ageSec, size: quote.size, client, diff }) * Math.exp(-biasBeta * bias)
   const pAsk = 1 - Math.exp(-hAsk * dt)
   const pBid = 1 - Math.exp(-hBid * dt)
 

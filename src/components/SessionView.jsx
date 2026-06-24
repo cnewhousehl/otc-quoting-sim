@@ -128,7 +128,10 @@ function RfqCard({ rfq, sim }) {
   return (
     <div className="rfq">
       <div className="rfq-top">
-        <span className="who">{rfq.handle}</span>
+        <span className="who">
+          {rfq.handle}
+          {rfq.biasShown && <span className={`bias ${rfq.biasLabel}`}>{rfq.biasLabel}</span>}
+        </span>
         <span className="amt">{usd(rfq.notional)} {rfq.assetId}</span>
       </div>
       <div className="rfq-sub">
