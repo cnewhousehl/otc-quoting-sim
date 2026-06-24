@@ -17,7 +17,7 @@ export default function SessionView({ startConfig, onExit }) {
       <NewsBar state={state} />
       <div className="desk-body">
         <aside className="rfq-col">
-          <RfqInbox sim={sim} presets={presets} />
+          <RfqInbox sim={sim} presets={presets} denom={denom} />
         </aside>
         <aside className="manage-col">
           <Positions sim={sim} denom={denom} />
@@ -86,21 +86,21 @@ function NewsBar({ state }) {
 }
 
 // ---- left: RFQ inbox + live quotes -----------------------------------------
-function RfqInbox({ sim, presets }) {
+function RfqInbox({ sim, presets, denom }) {
   const { state } = sim
   return (
     <div className="panel fill">
       <div className="panel-h">RFQs <span className="badge">{state.pendingRfqs.length}</span></div>
       <div className="scroll">
         {state.pendingRfqs.length === 0 && <div className="empty">waiting for inbound…</div>}
-        {state.pendingRfqs.map((r) => <RfqCard key={r.id} rfq={r} sim={sim} presets={presets} />)}
+        {state.pendingRfqs.map((r) => <RfqCard key={r.id} rfq={r} sim={sim} presets={presets} denom={denom} />)}
         <LiveQuotes sim={sim} />
       </div>
     </div>
   )
 }
 
-function RfqCard({ rfq, sim, presets }) {
+function RfqCard({ rfq, sim, presets, denom }) {
   const venue = sim.venuesForAsset(rfq.assetId)[0]
   const mid = sim.getBook(venue)?.mid ?? rfq.refPrice
   const [w, setW] = useState(8)
@@ -128,8 +128,8 @@ function RfqCard({ rfq, sim, presets }) {
         <span className="amt">{usdCompact(rfq.notional)}</span>
       </div>
       <div className="rfq-sub">
-        <span>{rfq.assetId} · {fmt(rfq.size, 3)}</span>
-        {hc && hc.bps != null && <span className="hedgehint">hedge ~{hc.bps.toFixed(0)}bps {hc.tier}</span>}
+        <span>{rfq.assetId} · {denom === 'usd' ? usdCompact(rfq.notional) : fmt(rfq.size, 3)}</span>
+        {hc && hc.bps != null && <span className="hedgehint" title="blended VWAP cost to fill the whole clip (≈ half the clearing level you'd reach in the book)">hedge ≈{hc.bps.toFixed(0)}bps avg · {hc.tier}</span>}
       </div>
       {pos !== 0 && <div className={`pos-hint ${pos > 0 ? 'long' : 'short'}`}>you {pos > 0 ? 'long' : 'short'} {fmt(Math.abs(pos), 2)} — skew to flatten</div>}
       <div className="quote-row">
@@ -289,6 +289,13 @@ function VenueLadder({ sim, asset, vid, denom, pos }) {
   const easy = sim.session.current.difficulty === 'easy'
   const hasPos = Math.abs(pos) > 1e-9
   const flatSide = pos > 0 ? 'sell' : 'buy'
+  // Read the LIVE position at click time (not the render snapshot) so each %
+  // hedges exactly that fraction of the current delta at current prices.
+  const hedgePct = (p) => {
+    const live = sim.session.current.getState().positions[asset] ?? 0
+    if (Math.abs(live) < 1e-9) return
+    sim.hedge({ assetId: asset, venueId: vid, side: live > 0 ? 'sell' : 'buy', size: Math.abs(live) * p })
+  }
   return (
     <div className="lwrap">
       <div className="ltier">{sim.venueInfo(vid).tier}</div>
@@ -302,7 +309,7 @@ function VenueLadder({ sim, asset, vid, denom, pos }) {
         <div className="pcthedge">
           <span className="lbl">{flatSide}</span>
           {[0.05, 0.25, 0.5, 1].map((p) => (
-            <button key={p} onClick={() => sim.hedge({ assetId: asset, venueId: vid, side: flatSide, size: Math.abs(pos) * p })}>{p * 100}%</button>
+            <button key={p} onClick={() => hedgePct(p)}>{p * 100}%</button>
           ))}
         </div>
       )}

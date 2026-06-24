@@ -54,6 +54,7 @@ export function createPerpVenue({ rng, price, dt, cfg: rawCfg }) {
   let lagged = price.mid(cfg.assetId)
   let heldAnchor = price.mid(cfg.assetId) // displayed reference, refreshed discretely
   let heldEps = 0
+  let heldTick = 0 // tick of the last refresh — size jitter holds between refreshes
   let lastTick = 0
   let stress = 0 // news-driven stress: widens spread, thins depth
   const STRESS_SPREAD = 2.5
@@ -74,7 +75,7 @@ export function createPerpVenue({ rng, price, dt, cfg: rawCfg }) {
   function levelSize(n, k, side) {
     const base = cfg.depthTop * Math.exp(-k / cfg.k0)
     const idx = (side === 'ask' ? IDX.jitterAsk : IDX.jitterBid) + k
-    const jit = cfg.jitter > 0 ? 1 + cfg.jitter * (2 * rng.uniform(STREAMS.book, n, cfg.id, idx) - 1) : 1
+    const jit = cfg.jitter > 0 ? 1 + cfg.jitter * (2 * rng.uniform(STREAMS.book, heldTick, cfg.id, idx) - 1) : 1
     const mult = (resilience.get(`${cfg.id}:${side}`) * tox.depthMult(cfg.id, side)) / (1 + STRESS_DEPTH * stress)
     return base * jit * mult
   }
@@ -101,6 +102,7 @@ export function createPerpVenue({ rng, price, dt, cfg: rawCfg }) {
     if (n % cfg.updateEvery === 0) {
       heldAnchor = cfg.lagTau > 0 ? lagged : price.mid(cfg.assetId)
       heldEps = cfg.epsSigma > 0 ? cfg.epsSigma * rng.normal(STREAMS.book, n, cfg.id, IDX.eps) : 0
+      heldTick = n // size jitter only re-rolls on the cadence too
     }
     resilience.regrow()
     tox.decayAll()
