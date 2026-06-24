@@ -17,7 +17,9 @@ export const EXCHANGES = {
     tier: 'T1', type: 'perp',
     halfSpreadBps: 0.6, levelStepBps: 0.3, epsBps: 0.1,
     depthTopNotional: 400_000, k0: 6, numLevels: 30, jitter: 0.2,
-    kyleLambda: 0.3, phi: 0.2, tau: 4, lagTau: 0,
+    // Kyle-λ impact in RETURN space per (signed size / depthTop). Calibrated so
+    // taking ~the top level moves the mid a few bps (not tens of %).
+    kyleLambda: 0.0003, phi: 0.35, tau: 4, lagTau: 0,
     updateMult: 1.0, // price-discovery venue, fastest cadence
     toxTau: 8, kSpread: 0.8, kDepth: 0.6, // mid-skew set per-asset in buildVenues
   },
@@ -25,7 +27,7 @@ export const EXCHANGES = {
     tier: 'T2', type: 'perp',
     halfSpreadBps: 2.0, levelStepBps: 1.0, epsBps: 0.4,
     depthTopNotional: 100_000, k0: 4, numLevels: 24, jitter: 0.35,
-    kyleLambda: 0.7, phi: 0.15, tau: 12, lagTau: 3,
+    kyleLambda: 0.0008, phi: 0.25, tau: 12, lagTau: 3, // thinner → more impact than T1
     updateMult: 1.5, // price-following venue, lags T1
     toxTau: 10, kSpread: 1.2, kDepth: 0.8,
   },

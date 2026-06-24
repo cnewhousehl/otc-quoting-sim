@@ -45,8 +45,19 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
   const quotes = createQuoteBook({ ttlTicks: cfg.ttlTicks })
   const toxicDrift = createToxicDrift()
   const isHard = cfg.difficulty === 'hard'
+  // Current visible depth (notional) across an asset's venues — shrinks when the
+  // book widens/thins under flow or news, so RFQ sizes adapt to live liquidity.
+  function liveLiquidity(assetId) {
+    let total = 0
+    for (const vid of book.venuesForAsset(assetId)) {
+      const snap = book.getBookSnapshot(vid)
+      for (const l of snap.asks) total += l.size * l.price
+      for (const l of snap.bids) total += l.size * l.price
+    }
+    return total / 2 || assetLiquidityNotional(assetId)
+  }
   const rfqGen = createRfqGenerator({
-    rng, dt, difficulty: diff, universe, roster: ROSTER, liquidityNotional: assetLiquidityNotional,
+    rng, dt, difficulty: diff, universe, roster: ROSTER, liquidityNotional: liveLiquidity,
     favorFn: (id) => getFavor(id),
     pToxFor: (a) => Math.min(0.92, diff.pTox + (isHard ? toxBump.get(a) ?? 0 : 0)),
   })
@@ -221,8 +232,9 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
       events.push(emit({ type: 'news', catId: newsEv.catId, headline: newsEv.headline, scope: newsEv.scope, assets: newsEv.assets, direction: newsEv.direction, magnitude: newsEv.magnitude }))
     }
 
-    // (5) create an RFQ (toxicity + bias pre-sampled at creation)
-    const rfq = rfqGen.step(n, pending.size)
+    // (5) create an RFQ (toxicity + bias pre-sampled at creation); size couples
+    // to live depth + news stress (event blocks)
+    const rfq = rfqGen.step(n, pending.size, news.stressAt(n))
     if (rfq) {
       assignBias(rfq)
       const fv = getFavor(rfq.clientId)

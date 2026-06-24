@@ -12,7 +12,7 @@
 
 import { STREAMS } from './rng.js'
 
-export function createRfqGenerator({ rng, dt, difficulty, universe, roster, liquidityNotional, favorFn = null, pToxFor = null, sizeFrac = 0.08, sigmaLN = 0.8 }) {
+export function createRfqGenerator({ rng, dt, difficulty, universe, roster, liquidityNotional, favorFn = null, pToxFor = null, sizeFrac = 0.13, sigmaLN = 1.15, blockProb = 0.06, blockMult = 4 }) {
   let seq = 0
   const sharp = roster.filter((c) => c.archetype === 'sharp')
   const mids = roster.filter((c) => c.archetype === 'mid')
@@ -60,16 +60,26 @@ export function createRfqGenerator({ rng, dt, difficulty, universe, roster, liqu
     return { entry: pickFrom(softs.length ? softs : roster, uPick), isToxic: false }
   }
 
-  function sizeFor(asset, n, id) {
-    const medianNotional = liquidityNotional(asset.id) * sizeFrac
+  // Clip size couples to the asset's CURRENT visible depth (which shrinks when the
+  // book widens/thins under flow or news), with high variance so hedge costs span
+  // ~1bp to ~100bps. Occasional event-size BLOCKS (more likely around news) are
+  // offload opportunities. stress ∈ [0,1] is the live news stress.
+  function sizeFor(asset, n, id, stress = 0) {
+    const liq = liquidityNotional(asset.id)
+    const base = liq * sizeFrac
     const z = rng.normal(STREAMS.rfqSpec, n, id, 5)
-    const notional = medianNotional * Math.exp(sigmaLN * z) // LogNormal multiplier
-    return Math.max(1e-9, notional / asset.refPrice) // base units
+    let mult = Math.min(8, Math.exp(sigmaLN * z)) // LogNormal, capped — no absurd tails
+    if (rng.uniform(STREAMS.rfqSpec, n, id, 7) < blockProb + 0.18 * stress) {
+      mult *= blockMult * (1 + 0.5 * stress) // event-size block (offload opportunity)
+    }
+    // Cap at "barely hedgeable" (~1.5× visible depth), never "impossible".
+    const notional = Math.min(liq * 1.5, Math.max(asset.refPrice, base * mult))
+    return notional / asset.refPrice // base units
   }
 
   // One tick. Returns a new RFQ, or null (no arrival / cap hit). `pendingCount`
-  // is the number of RFQs currently awaiting a quote.
-  function step(n, pendingCount) {
+  // is the number of RFQs awaiting a quote; `stress` is the live news stress.
+  function step(n, pendingCount, stress = 0) {
     if (pendingCount >= difficulty.maxPendingRFQs) return null
     const pArrival = difficulty.arrivalRate * dt
     if (rng.uniform(STREAMS.rfqArrival, n, 'arrival', 0) >= pArrival) return null
@@ -77,7 +87,7 @@ export function createRfqGenerator({ rng, dt, difficulty, universe, roster, liqu
     const id = `rfq${++seq}`
     const asset = weightedAsset(rng.uniform(STREAMS.rfqArrival, n, id, 1))
     const { entry, isToxic } = pickClient(n, id, asset.id)
-    const size = sizeFor(asset, n, id)
+    const size = sizeFor(asset, n, id, stress)
     return {
       id,
       tick: n,

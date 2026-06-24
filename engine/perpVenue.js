@@ -104,6 +104,7 @@ export function createPerpVenue({ rng, price, dt, cfg: rawCfg }) {
     }
     resilience.regrow()
     tox.decayAll()
+    skewImpact *= 0.997 // accumulated impact heals slowly (temporary component)
   }
 
   const getBookSnapshot = () => buildLadder(lastTick)
