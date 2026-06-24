@@ -8,7 +8,6 @@ import { describe, it, expect } from 'vitest'
 import { createRng } from '../engine/rng.js'
 import { createQuoteBook } from '../engine/quote.js'
 import { evaluateQuoteFill } from '../engine/fill.js'
-import { createPnL } from '../engine/pnl.js'
 import { buildDriftPath, createToxicDrift, resolveClient, sampleToxic } from '../engine/client.js'
 import { getDifficulty } from '../config/difficulty.js'
 
@@ -20,7 +19,7 @@ const SHARP_ENTRY = { id: 'helix', archetype: 'sharp', size: { medianX: 5 } }
 
 // Simulate one held/refreshed quote under an adverse mid ramp; return whether
 // the (stale) ask side got picked off.
-function simQuote(level, { policy = 'hold', seed = 1, i = 0, widthSigma = 0.3, moveSigma = 1.0, rampTicks = 8, refreshEvery = 10, qb, rng }) {
+function simQuote(level, { policy = 'hold', i = 0, widthSigma = 0.3, moveSigma = 1.0, rampTicks = 8, refreshEvery = 10, qb, rng }) {
   const d = getDifficulty(level)
   const client = resolveClient(SHARP_ENTRY, d)
   const diff = { dDiff: d.hazardScale }
