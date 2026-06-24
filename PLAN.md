@@ -43,7 +43,12 @@ end so the engine exposes the right interface to both. Per instructor direction 
 
 ---
 
-## Phase 0 — Repo bootstrap (one-time, fast)
+## Phase 0 — Repo bootstrap ✅ COMPLETE
+
+Scaffold, CI, and Pages deploy are all in place (Vite + React + Vitest, `LICENSE`, `.gitignore`,
+`.github/workflows/deploy.yml`, public `README.md`, remote `origin` wired and pushed). The **one
+remaining bootstrap verification item** is confirming the `?seed=<id>` URL param works on the hosted
+Pages bundle. Original bootstrap steps, for the record:
 
 1. `git init` a new repo at `C:\Users\cnewh\Desktop\personal-projects\otc-quoting-sim`.
 2. Scaffold Vite + React (`npm create vite@latest . -- --template react`), add Vitest.
@@ -77,9 +82,11 @@ replayable for grading.
 | `rng.js` | Seeded PRNG (mulberry32/xoshiro128**); named sub-streams per concern (price, book jitter, RFQ arrivals, client draws, execution hazard) so adding a feature doesn't shift unrelated draws. |
 | `clock.js` | Discrete tick loop (default 250 ms wall → configurable sim-dt). Drives price ticks, RFQ arrivals, and **per-tick re-evaluation of every live quote**. Buckets async student actions to the tick they arrive on. |
 | `price.js` | Hidden true-mid `M_t` per asset: GBM with regime-switchable drift {flat, up, down, mean-revert} + optional Poisson jumps. True mid is **never shown**; students infer fair from the books. |
-| `book.js` | Per-venue L2 ladder: reference mid `m_v = M_t + basis_v + ε_v`, half-spread + depth profile `D_v·exp(−k/k0)` by liquidity tier, seeded size jitter. Walk-the-book VWAP fills; Kyle-λ permanent impact `λ_v·signed/D_v` with a fraction `φ` feeding back into `M_t` (your flow is information). |
-| `resilience.js` | Consumed levels regrow toward steady state with venue time-constant `τ_v` → small clips with pauses beat one sweep. |
-| `toxicity.js` | Per-venue EWMA of the student's signed flow → widen `s_v`, thin hit-side depth, skew `m_v` away; heals when flow stops. (The "bids disappear when I smash the bid" behavior.) |
+| `book.js` | **Stable `book` interface with two implementations (see §1.8): 1a parametric ladder, 1b agent-MM matching LOB.** Per-venue L2 ladder: reference mid `m_v = M_t + basis_v + ε_v`, half-spread + depth profile `D_v·exp(−k/k0)` by liquidity tier, seeded size jitter. Walk-the-book VWAP fills; Kyle-λ permanent impact `λ_v·signed/D_v` with a fraction `φ` feeding back into `M_t` (your flow is information). |
+| `resilience.js` | **Parametric in 1a → emergent in 1b** (MMs re-posting on their own cadence). Consumed levels regrow toward steady state with venue time-constant `τ_v` → small clips with pauses beat one sweep. |
+| `toxicity.js` | **Parametric in 1a → emergent in 1b** (MMs detecting adverse flow and pulling/widening). Per-venue EWMA of the student's signed flow → widen `s_v`, thin hit-side depth, skew `m_v` away; heals when flow stops. (The "bids disappear when I smash the bid" behavior.) |
+| `maker.js` | **NEW (Phase 1b).** Market-maker agent population per venue: each MM has perception noise on `M_t`, a base half-spread, a reaction latency, and a quoting style (symmetric vs A–S inventory-skew). Difficulty tunes the population (count, spread mix, reaction-speed mix, perception noise, inventory aggressiveness). |
+| `match.js` | **NEW (Phase 1b).** Price-time-priority matching engine: MM limit orders rest; a marketable order trades against the resting opposite side and uncrosses the book the same tick (crossing is a trade, not a bug). |
 | `client.js` | **NEW — client archetype roster.** Each RFQ is issued by a named client with a profile: informed-probability, reservation spread (how tight to win), stale-pickoff aggression, size distribution, post-fill drift magnitude. Name→archetype transparency is difficulty-controlled. |
 | `rfq.js` | Poisson RFQ arrivals (rate from difficulty). Asset drawn from weighted universe (majors frequent, esoterics rare). Size coupled to current liquidity (size = depth-within-band × LogNormal multiplier) → mix of easy small clips and dangerous large clips. **Enforces `maxPendingRFQs`** (queue/suppress new arrivals when the cap is hit). |
 | `quote.js` | **NEW — live quote lifecycle.** A student two-way (bid,ask) for an RFQ becomes a LIVE object with a TTL (default 30 s). States: live → filled / cancelled("off") / refreshed(re-quote at new fair) / expired. Holds the prices at which it is currently executable. |
@@ -159,6 +166,187 @@ vol/depth/spread/`τ`/`λ_v`/`φ`, fees, soft inventory limit. One object; no en
   staleness (a quote left live through an adverse move gets picked off by a sharp client and shows
   negative adverse-selection P&L); `maxPendingRFQs` enforcement; difficulty bundle wiring; P&L
   decomposition identity (components sum to net).
+
+### 1.8 Hedging-market model (phased agent-based market makers behind the `book` API)
+
+The sim has two distinct liquidity relationships; this section concerns only the second:
+
+1. **Clients → Student** — RFQ → student two-way → client fills via the Q1–Q8 execution-hazard
+   model. This is the student's revenue side and the pedagogical centerpiece. **Unchanged by this
+   section** (clients are takers, not market makers).
+2. **Student → Market** — the student hedges inventory into a venue book. This is the *only* place
+   the book/MM model lives, and what fair-price discovery is built on.
+
+**Architecture: agent MMs post into a real (mini) matching LOB.** Rather than free-floating
+independent quotes (which can lock/cross), 3–5 market-maker agents per venue post limit orders into a
+price-time-priority matching engine. A would-be cross is simply a **marketable order that trades**
+against the resting opposite side and uncrosses the book the same tick — crossing is a trade, not a
+bug, so no ad-hoc clamps are needed.
+
+**MM heterogeneity (the sophistication dial):** each MM has perception noise on the hidden mid `M_t`
+(sharper MMs see fair better), a base half-spread, a **reaction latency** (fast vs delayed
+quote-pulling when adversely traded), and a quoting style — **symmetric around fair** vs
+**inventory-skewed** (Avellaneda–Stoikov reservation price `r = fair − inventory·γ·σ²`).
+
+**What becomes emergent (vs. parametric hacks):** `toxicity.js` (depth vanishing when the student
+leans on one side) emerges from MMs detecting adverse flow and pulling/widening; `resilience.js`
+(depth regrowth) emerges from MMs re-posting on their own cadence; **skew** emerges from
+inventory-managing MMs; **Kyle-λ impact** emerges from consuming finite MM depth plus MMs inferring
+the student is informed and repricing. Inter-MM prints also give the student a realistic **tape** to
+infer fair from — the exact skill being taught.
+
+**Phasing (de-risks the centerpiece):**
+
+- **Phase 1a — parametric book baseline.** Build the Q1–Q8 client/hazard core against a simple
+  parametric book behind a stable `book` interface (`getBookSnapshot()`, `executeMarketable(order)`,
+  `mid()`, `tick()`...). The staleness lesson ships and calibrates fast, independent of the ABM.
+- **Phase 1b — agent-MM matching LOB.** Swap in the matching engine (`match.js`) + MM population
+  (`maker.js`) as a drop-in behind the same `book` interface. `toxicity.js`/`resilience.js` collapse
+  into MM behavior (or become thin shims). The parametric book is retained as a **test double**.
+
+**Determinism:** add a `maker` sub-stream keyed by `makerId` (perception noise, size jitter, reaction
+jitter addressed by `(makerId, tick)`), consistent with the Q4 counter-based addressing — adding or
+removing a maker shifts no other draw.
+
+**Calibration caveat:** spread/depth/impact become *indirect* — the Easy/Med/Hard dial tunes
+MM-population parameters (count, spread distribution, reaction-speed mix, perception noise, inventory
+aggressiveness) to *produce* target book statistics, with parametric guardrails (floor on posted
+depth, cap on spread) so difficulty stays monotone. Q7 gains invariants on the emergent book.
+
+---
+
+## Phase 1 Engine — Quantitative Core (detailed spec)
+
+This expands §1.2–§1.3 with the math the build must implement. Validated in a dedicated design pass.
+
+### Q1. Time & RNG base
+
+- Tick `n`, sim time `t = n·dt`, default `dt = 0.25 s` → `TTL_ticks = round(30/dt) = 120`.
+- Per-asset hidden true mid `M_t`; per-tick price-stdev `σ_M` (asset-specific) is the unit for all
+  hazard math, so edges are dimensionless in `edge/σ_M`.
+- Counter-based PRNG (PCG32 / SplitMix→xoshiro) addressed by `(streamId, n, entityKey, localIdx)`,
+  **not** a single linear stream. Gaussians via inverse-CDF (Moro/Acklam) so one uniform → one normal
+  (exact 1:1 draw accounting). This addressing is what guarantees stream isolation (Q3).
+
+### Q2. Per-tick execution-hazard model (the centerpiece)
+
+A live quote to client *C*, notional `X`, frozen `studentBid`/`studentAsk`. Signed edge in the
+client's favor, normalized: `e_ask = (M_t − studentAsk)/σ_M` (client lifts/buys),
+`e_bid = (studentBid − M_t)/σ_M` (client hits/sells). `e>0` = stale, in-the-money to client (pickoff
+zone); at fair-symmetric creation both sides start at `−w/σ_M < 0` (client pays your half-spread `w`).
+
+Per-side fill prob = `1 − exp(−h·dt)`, intensity `h_side = λ_C · g_arch(e_side; C) · L(X) · R_dur(τ) · D_diff`:
+
+- **Soft** (uninformed, pays spread): `g_soft(e) = s0 + s1·logistic((e+ω_soft)/b_soft)`. Large floor
+  `s0` ⇒ soft clients still trade when `e<0` → this is the spread-capture engine; roughly flat in `e`.
+- **Sharp** (informed, picks off): `g_sharp(e) = q0 + A_pick·softplus((e−θ_sharp)/b_sharp)`. Tiny `q0`
+  ⇒ rarely trades on-market; softplus ⇒ hazard spikes once the quote goes stale-in-the-money.
+- `L(X) = (X/X_ref)^(−η)` (clamped) — bigger clips harder to fill; `R_dur(τ) = 1 − exp(−τ/τ_react)`
+  decision latency; `D_diff` global difficulty scaler.
+- **Competing risks:** bid-fill and ask-fill are independent hazards on the same quote; first to fire
+  consumes it; same-tick tie → larger `e_side` wins (deterministic, no extra draw).
+- **Emergent win-rate:** `WinRate(w) ≈ 1 − exp(−λ_C·ḡ_soft(−w/σ_M)·TTL)` — a decreasing S-curve in
+  width; difficulty shifts it via `λ_C`, `s0`, `ω_soft`.
+- **Teaching invariant (why staleness is −EV):** if `M_t` drifts adversely, `e_side` rises linearly,
+  so (i) sharp hazard rises — you get filled exactly when it's worst — and (ii) fill severity
+  `−σ_M·e_side` worsens. `E[PnL_hold] = Σ f(n)·(−σ_M·e(n)) < +w` and goes negative under pickoff.
+  Refreshing resets `e → −w/σ_M`, collapsing sharp hazard to `q0` and restoring `+w` capture. The
+  optimal policy is a refresh-when-`e≥e*` stopping rule — exactly what the A–S benchmark approximates.
+
+### Q3. Informed/toxic flow realization
+
+- **Sample at RFQ creation, activate on fill.** At creation, draw client, `isToxic ~ p_tox` (≈0 for
+  soft archetype), and the entire post-fill adverse-drift path; store on the RFQ. Drift only injects
+  into `M_t` if a toxic fill occurs. Chosen over sample-at-fill because it (a) preserves the
+  counterfactual ("the right/refreshed quote could have dodged it") needed for honest grading, (b)
+  keeps the stream isolated from student actions, (c) is the truer microstructure story (the client is
+  informed when they ask).
+- **Drift shape:** on a toxic fill, add `μ_tox(k) = χ·δ_tox·ρ^k/Z` for `k=0..N−1` on top of GBM —
+  exponential-decay (front-loaded), superposable across overlapping toxic fills. `χ` = adverse sign.
+- **Attribution:** track `r_tox` as a separate additive component of each tick's `M` update;
+  `AdvSel_n = position·M·r_tox`, `InvMtM_n = position·M·r_GBM`. This is the clean split the grader
+  needs. P&L identity (unit-tested): `Realized = GrossSpread + InvMtM + AdvSel + HedgeSlippage − Fees`.
+
+### Q4. Determinism ordering
+
+Fixed sub-stream registry, consumed each tick in order:
+`price → jump → book → maker → rfqArrival → rfqSpec → execHazard → venueReact`. (`maker`, keyed by
+`makerId`, is Phase 1b; in 1a it is unused so it shifts no other draw.) Isolation rule: draws are
+addressed by stable entity key (`execHazard` keyed by `quoteId`, `rfqSpec` by `rfqId`, `maker` by
+`makerId`, `price`/`book` by asset/venue id), so whether quote #7 exists has zero effect on any other
+quote's or stream's draws. Per-tick loop:
+
+1. apply student actions [no draws]
+2. advance `M` [GBM + active `μ_tox`]
+3. jumps
+4. books + resilience (1a parametric; 1b = MM quote/pull + matching)
+5. create RFQs (pre-sample drift)
+6. expire TTL quotes
+7. `execHazard` in ascending `quoteId`, resolve fills, activate toxic drift
+8. accounting + event log
+9. venue toxicity EWMA (1a parametric; 1b emergent from MM state)
+
+`runFromSeed(seed, config, quotePolicy)` runs a deterministic `(observableState)→actions` callback at
+step 1 — student replay, strawman, and A–S bot are just different policies on the identical path.
+
+### Q5. Event-log schema (P&L + grader computable from the log alone)
+
+Each record stamps: `tick`, `type`, `quoteId?`, `rfqId?`, `clientId?`, `archetype?`, `isToxic?`,
+`assetId`, `side?`, `sizeX?`, `price?`, `fairMid_at_event`, `edge_sigma?` (staleness at fill),
+`position_after?`, `r_GBM?`, `r_tox?`, `invMtM_delta?`, `advSel_delta?`, `venueId?`, `vwap?`,
+`hedgeSlippage?`, `fees?`, `cash_after`. `GrossSpread`, `AdvSel`, `InvMtM`, `HedgeSlippage`, `Fees`
+all reduce directly from this; the grader recomputes benchmark PnL by re-running `runFromSeed` with a
+bot policy and the identical accounting.
+
+### Q6. Difficulty → concrete coefficients (replaces the indicative §1.3 table)
+
+| Param | Easy | Med | Hard |
+|-------|------|-----|------|
+| `p_tox` (sharp toxic share) | 0.15 | 0.35 | 0.60 (0.50–0.75) |
+| Soft contact `λ_soft` (1/s) | 0.40 | 0.32 | 0.28 |
+| Soft floor `s0` | 0.75 | 0.60 | 0.50 |
+| Soft reservation `ω_soft` (σ) | 2.0 | 1.4 | 1.0 |
+| Sharp baseline `q0` | 0.02 | 0.02 | 0.03 |
+| Pickoff gain `A_pick` | 0.6 | 1.4 | 2.6 |
+| Sharp slope `b_sharp` (σ) | 0.6 | 0.45 | 0.35 |
+| Sharp threshold `θ_sharp` (σ) | 0.3 | 0.1 | 0.0 |
+| Toxic drift `δ_tox` (σ) | 0.8 | 1.6 | 2.6 |
+| Toxic horizon `N` (ticks) | 16 | 24 | 32 |
+| Size sensitivity `η` | 0.30 | 0.20 | 0.12 |
+| RFQ arrival (RFQ/s) | 0.5 | 0.8 | 1.2 |
+| Max pending RFQs | 3 | 5 | 8 |
+| Name→toxicity transparency | full | archetype only | hidden (infer) |
+
+Guardrail (verified in design): even on Hard a fair-width quote still fills ≈0.99 within TTL — Hard
+makes flow toxic and fast, never untradeable.
+
+### Q7. Calibration invariants (Vitest targets — see §1.7)
+
+1. Mid-market soft fill ≥0.97 (easy/med), ≥0.95 (hard).
+2. One-σ-wide fill ≈0.85/0.72/0.60 across levels, S-curve, levels ≥10pts apart.
+3. Wide (3σ) fill decays toward floor (~0.55 easy → ~0.25 hard).
+4. Stale quote held through a +1σ adverse move is picked off ≥0.70 on hard (cap intensity so it lands
+   0.70–0.85, not 1.0), ≤0.35 on easy.
+5. Toxic break-even width `w_be ≈ δ_tox·σ_M/2`: quoting tighter than `w_be` to a sharp/toxic name is
+   mean-negative across seeds.
+6. `E[PnL | hold to TTL] < E[PnL | refresh at e≥0]` on med/hard (the staleness lesson).
+7. A–S bot > strawman on identical seeds, margin widening with difficulty.
+8. P&L identity reconciles to 1e−9.
+9. Determinism + stream-isolation (a never-filled extra quote shifts no other draw).
+10. Fixed mediocre policy: mean PnL strictly decreases easy→med→hard, mean adverse-selection strictly
+    increases.
+11. **(Phase 1b emergent book)** observed half-spread & depth land in target bands per difficulty; no
+    persistent crossed book; sustained one-sided student flow reduces hit-side depth (MM quote-pull)
+    and it heals after flow stops.
+
+### Q8. Engine build order (within Phase 1)
+
+`rng` + determinism tests → `price` (single asset) → **single-venue 1a parametric book** +
+walk-the-book hedge + `pnl` decomposition → `quote` lifecycle + `fill` hazard (single soft client) →
+client archetypes + toxic flow + attribution → multi-venue + resilience + toxicity reaction → `rfq`
+arrivals + `maxPendingRFQs` → difficulty presets → calibration test suite (Q7) → **Phase 1b: swap in
+agent-MM matching LOB (`maker.js` + `match.js`) behind the `book` interface, retaining the parametric
+book as a test double.** UI and grading layer follow.
 
 ---
 
