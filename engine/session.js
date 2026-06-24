@@ -202,6 +202,7 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
       liveQuotes: liveQuoteViews(),
       pendingRfqs: [...pending.values()].map((r) => ({ ...r, ageTicks: n - r.tick, pendingTtlTicks: cfg.pendingTtlTicks })),
       blotter: p.blotter,
+      hedgeLog: p.hedgeLog,
     }
   }
 
