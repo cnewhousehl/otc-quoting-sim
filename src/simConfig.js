@@ -33,9 +33,14 @@ export const VENUES = [
   },
 ]
 
+// Seed resolution: an explicit ?seed=<n> reproduces a path exactly (determinism
+// / grading); with no param we randomize each load so refreshes differ. The
+// chosen seed is shown in the header so a student can pin a path they liked.
+// (Math.random lives only in the UI shell — never in /engine.)
 export function readSeed() {
   if (typeof window === 'undefined') return 1
   const raw = new URLSearchParams(window.location.search).get('seed')
   const n = Number(raw)
-  return Number.isFinite(n) && raw != null && raw !== '' ? n : 1
+  if (raw != null && raw !== '' && Number.isFinite(n)) return n
+  return Math.floor(Math.random() * 1_000_000_000)
 }
