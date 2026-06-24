@@ -16,25 +16,24 @@ describe('pass action', () => {
 })
 
 describe('favor → arrival', () => {
-  it('a well-treated client comes back more often than a passed one', () => {
-    // policy: quote tight to FAVOR_CLIENT, pass everyone else → its share of flow rises
-    const { eventLog } = runFromSeed(6, { difficulty: 'medium', tier: 'pro', config: { sessionMinutes: 25 } }, (state, s) => {
-      const actions = []
-      for (const r of state.pendingRfqs) {
-        if (r.clientId === 'moonlad') {
-          const mid = s.getBookSnapshot(s.venuesForAsset(r.assetId)[0]).mid
-          actions.push({ type: 'submitQuote', rfqId: r.id, bid: mid * 0.9999, ask: mid * 1.0001 }) // very tight
-        } else {
-          actions.push({ type: 'passRfq', rfqId: r.id })
-        }
-      }
-      return actions
-    })
-    const rfqs = eventLog.filter((e) => e.type === 'rfq_new')
-    const first = rfqs.slice(0, Math.floor(rfqs.length / 2))
-    const last = rfqs.slice(Math.floor(rfqs.length / 2))
-    const share = (arr) => arr.filter((e) => e.clientId === 'moonlad').length / Math.max(1, arr.length)
-    expect(share(last)).toBeGreaterThan(share(first)) // favored client's share grows
+  it('a well-treated client comes back more often than a burned one', () => {
+    // A/B on the SAME seed: favor moonlad (tight fills, pass others) vs burn it
+    // (pass moonlad, serve others). Its share of flow should be higher when favored.
+    const moonladShare = (favorMoonlad) => {
+      const { eventLog } = runFromSeed(6, { difficulty: 'medium', tier: 'pro', config: { sessionMinutes: 30 } }, (state, s) => {
+        return state.pendingRfqs.map((r) => {
+          const target = r.clientId === 'moonlad'
+          if (target === favorMoonlad) {
+            const mid = s.getBookSnapshot(s.venuesForAsset(r.assetId)[0]).mid
+            return { type: 'submitQuote', rfqId: r.id, bid: mid * 0.9999, ask: mid * 1.0001 } // tight → builds favor
+          }
+          return { type: 'passRfq', rfqId: r.id } // burns favor
+        })
+      })
+      const rfqs = eventLog.filter((e) => e.type === 'rfq_new')
+      return rfqs.filter((e) => e.clientId === 'moonlad').length / Math.max(1, rfqs.length)
+    }
+    expect(moonladShare(true)).toBeGreaterThan(moonladShare(false))
   })
 })
 

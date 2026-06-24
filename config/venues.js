@@ -15,8 +15,8 @@
 export const EXCHANGES = {
   'binance-perp': {
     tier: 'T1', type: 'perp',
-    halfSpreadBps: 0.6, levelStepBps: 0.3, epsBps: 0.1,
-    depthTopNotional: 400_000, k0: 6, numLevels: 30, jitter: 0.2,
+    halfSpreadBps: 0.6, levelStepBps: 0.8, epsBps: 0.1,
+    depthTopNotional: 150_000, k0: 20, numLevels: 50, jitter: 0.2,
     // Kyle-λ impact in RETURN space per (signed size / depthTop). Calibrated so
     // taking ~the top level moves the mid a few bps (not tens of %).
     kyleLambda: 0.0003, phi: 0.35, tau: 4, lagTau: 0,
@@ -25,15 +25,15 @@ export const EXCHANGES = {
   },
   'bybit-perp': {
     tier: 'T2', type: 'perp',
-    halfSpreadBps: 2.0, levelStepBps: 1.0, epsBps: 0.4,
-    depthTopNotional: 100_000, k0: 4, numLevels: 24, jitter: 0.35,
+    halfSpreadBps: 2.0, levelStepBps: 1.5, epsBps: 0.4,
+    depthTopNotional: 50_000, k0: 12, numLevels: 34, jitter: 0.35,
     kyleLambda: 0.0008, phi: 0.25, tau: 12, lagTau: 3, // thinner → more impact than T1
     updateMult: 1.5, // price-following venue, lags T1
     toxTau: 10, kSpread: 1.2, kDepth: 0.8,
   },
   'uni-amm': {
     tier: 'DEX', type: 'amm',
-    feeBps: 30, poolNotional: 800_000, sampleLevels: 16,
+    feeBps: 30, poolNotional: 800_000, sampleLevels: 22,
     updateMult: 2.5, // DEX reprices slowly between arbs, small size
   },
 }
@@ -42,11 +42,13 @@ export const EXCHANGES = {
 // `sigma` is per-tick (250 ms) log-return stdev. These annualize to realistic
 // crypto vols (BTC ~55%, WIF ~165%) — at dt=0.25s, sigma·sqrt(4·86400·365)≈vol.
 // `corr` is the loading on the common market factor (alts co-move with majors).
+// `sizeScale` scales typical RFQ clip size for the name (DEX-only memes get small
+// clips so they stay barely-hedgeable, not impossible).
 export const ASSET_UNIVERSE = [
-  { id: 'BTC', refPrice: 65_000, sigma: 0.000050, corr: 0.90, weight: 0.40, venues: ['binance-perp', 'bybit-perp', 'uni-amm'] },
-  { id: 'ETH', refPrice: 3_200, sigma: 0.000060, corr: 0.90, weight: 0.30, venues: ['binance-perp', 'bybit-perp', 'uni-amm'] },
-  { id: 'SOL', refPrice: 150, sigma: 0.000090, corr: 0.92, weight: 0.18, venues: ['binance-perp', 'bybit-perp', 'uni-amm'] },
-  { id: 'WIF', refPrice: 2.0, sigma: 0.000150, corr: 0.70, weight: 0.12, venues: ['uni-amm'] }, // DEX-only meme
+  { id: 'BTC', refPrice: 65_000, sigma: 0.000050, corr: 0.90, weight: 0.40, sizeScale: 1.0, venues: ['binance-perp', 'bybit-perp', 'uni-amm'] },
+  { id: 'ETH', refPrice: 3_200, sigma: 0.000060, corr: 0.90, weight: 0.30, sizeScale: 1.0, venues: ['binance-perp', 'bybit-perp', 'uni-amm'] },
+  { id: 'SOL', refPrice: 150, sigma: 0.000090, corr: 0.92, weight: 0.18, sizeScale: 0.9, venues: ['binance-perp', 'bybit-perp', 'uni-amm'] },
+  { id: 'WIF', refPrice: 2.0, sigma: 0.000150, corr: 0.70, weight: 0.12, sizeScale: 0.1, venues: ['uni-amm'] }, // DEX-only meme
 ]
 
 const bps = (px, b) => (px * b) / 1e4

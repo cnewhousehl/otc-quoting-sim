@@ -12,7 +12,7 @@
 
 import { STREAMS } from './rng.js'
 
-export function createRfqGenerator({ rng, dt, difficulty, universe, roster, liquidityNotional, favorFn = null, pToxFor = null, sizeFrac = 0.13, sigmaLN = 1.15, blockProb = 0.06, blockMult = 4 }) {
+export function createRfqGenerator({ rng, dt, difficulty, universe, roster, liquidityNotional, favorFn = null, pToxFor = null, sizeFrac = 0.4, sigmaLN = 1.1, blockProb = 0.07, blockMult = 5 }) {
   let seq = 0
   const sharp = roster.filter((c) => c.archetype === 'sharp')
   const mids = roster.filter((c) => c.archetype === 'mid')
@@ -66,14 +66,14 @@ export function createRfqGenerator({ rng, dt, difficulty, universe, roster, liqu
   // offload opportunities. stress ∈ [0,1] is the live news stress.
   function sizeFor(asset, n, id, stress = 0) {
     const liq = liquidityNotional(asset.id)
-    const base = liq * sizeFrac
+    const base = liq * sizeFrac * (asset.sizeScale ?? 1)
     const z = rng.normal(STREAMS.rfqSpec, n, id, 5)
     let mult = Math.min(8, Math.exp(sigmaLN * z)) // LogNormal, capped — no absurd tails
     if (rng.uniform(STREAMS.rfqSpec, n, id, 7) < blockProb + 0.18 * stress) {
       mult *= blockMult * (1 + 0.5 * stress) // event-size block (offload opportunity)
     }
-    // Cap at "barely hedgeable" (~1.5× visible depth), never "impossible".
-    const notional = Math.min(liq * 1.5, Math.max(asset.refPrice, base * mult))
+    // Cap at "barely hedgeable" (~2.2× visible depth), never "impossible".
+    const notional = Math.min(liq * 2.2, Math.max(asset.refPrice, base * mult))
     return notional / asset.refPrice // base units
   }
 

@@ -287,7 +287,7 @@ function VenueLadder({ sim, asset, vid, denom }) {
   return (
     <div className="lwrap">
       <div className="ltier">{sim.venueInfo(vid).tier}</div>
-      <Ladder snap={sim.getBook(vid)} dir={sim.dirs[asset]} denom={denom} compact depth={5} />
+      <Ladder snap={sim.getBook(vid)} dir={sim.dirs[asset]} denom={denom} compact depth={10} />
       <div className="vhedge">
         <input type="number" step="0.1" value={size} onChange={(e) => setSize(+e.target.value)} />
         <button className="buy" onClick={() => sim.hedge({ assetId: asset, venueId: vid, side: 'buy', size: Math.abs(sizeCoin) })}>buy</button>
