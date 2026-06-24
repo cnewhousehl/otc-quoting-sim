@@ -212,19 +212,21 @@ function Positions({ sim, denom }) {
 
 function Pnl({ state }) {
   const d = state.decomposition
-  const rows = [
-    ['Gross spread', d.grossSpread],
-    ['Inventory MtM', d.invMtM],
-    ['Adverse sel.', d.advSel],
-    ['Hedge slippage', -d.hedgeSlippage],
-    ['Fees', -d.fees],
-  ]
+  const realized = d.grossSpread - d.hedgeSlippage - d.fees // locked-in trading P/L
+  const mtm = d.invMtM + d.advSel // open-inventory mark-to-market (unrealized)
+  const row = (k, v) => (
+    <div key={k} className="pnlrow"><span>{k}</span><span className={v >= 0 ? 'pos' : 'neg'}>{signedUsd(v)}</span></div>
+  )
   return (
     <div className="panel">
       <div className="panel-h">P&amp;L</div>
-      {rows.map(([k, v]) => (
-        <div key={k} className="pnlrow"><span>{k}</span><span className={v >= 0 ? 'pos' : 'neg'}>{signedUsd(v)}</span></div>
-      ))}
+      {row('Gross spread', d.grossSpread)}
+      {row('Hedge slippage', -d.hedgeSlippage)}
+      {row('Fees', -d.fees)}
+      <div className="pnlrow sub"><span>Realized</span><span className={realized >= 0 ? 'pos' : 'neg'}>{signedUsd(realized)}</span></div>
+      {row('Inventory MtM', d.invMtM)}
+      {row('Adverse sel.', d.advSel)}
+      <div className="pnlrow sub"><span>Mark-to-market</span><span className={mtm >= 0 ? 'pos' : 'neg'}>{signedUsd(mtm)}</span></div>
       <div className="pnlrow total"><span>Total</span><span className={state.totalPnL >= 0 ? 'pos' : 'neg'}>{signedUsd(state.totalPnL)}</span></div>
     </div>
   )

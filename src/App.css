@@ -155,6 +155,8 @@ body {
 .posrow.short .pq { color: var(--ask); }
 .inv-warn { color: var(--ask); font-size: 11px; margin-top: 4px; }
 .pnlrow { display: flex; justify-content: space-between; font-size: 12px; padding: 2px 0; font-variant-numeric: tabular-nums; }
+.pnlrow.sub { border-top: 1px dashed var(--grid); margin-top: 2px; padding-top: 3px; font-weight: 600; color: var(--fg); }
+.pnlrow.sub span:first-child { color: var(--dim); text-transform: uppercase; font-size: 10px; letter-spacing: 0.04em; }
 .pnlrow.total { border-top: 1px solid var(--grid); margin-top: 4px; padding-top: 5px; font-weight: 700; }
 .tape-v { font-size: 11px; }
 .tprint { display: flex; justify-content: space-between; gap: 6px; padding: 2px 0; font-variant-numeric: tabular-nums; border-bottom: 1px solid #141a22; }
