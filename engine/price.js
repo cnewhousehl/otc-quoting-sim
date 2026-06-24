@@ -124,6 +124,14 @@ export function createPriceProcess({ rng, dt, assets }) {
     return state.get(id).M
   }
 
+  // Permanent-impact feedback (Q: "your flow is information"). The book applies a
+  // fraction φ of its Kyle-λ impact to the true mid via this hook. Applied
+  // immediately (between diffusion steps), in return space.
+  function nudge(id, returnDelta) {
+    const s = state.get(id)
+    s.M = s.M * Math.exp(returnDelta)
+  }
+
   // Per-tick price stdev in PRICE units (the σ_M hazard math normalizes by).
   function sigmaM(id) {
     return state.get(id).M * cfgs.get(id).sigma
@@ -147,5 +155,5 @@ export function createPriceProcess({ rng, dt, assets }) {
     return out
   }
 
-  return { step, mid, sigmaM, components, assetIds, snapshot }
+  return { step, mid, nudge, sigmaM, components, assetIds, snapshot }
 }
