@@ -102,7 +102,7 @@ function Ladder({ snap, dir }) {
     bidRows.length ? bidRows[bidRows.length - 1].total : 0,
     1e-9,
   )
-  const spreadPct = (snap.spread / snap.mid) * 100
+  const spreadBps = (snap.spread / snap.mid) * 1e4
 
   return (
     <div className="book">
@@ -119,12 +119,13 @@ function Ladder({ snap, dir }) {
           <Row key={`a${i}`} lvl={lvl} side="ask" maxTotal={maxTotal} />
         ))}
       <div className={`midrow ${dir}`}>
-        <span className="lbl">Spread</span>
-        <span className="num spreadabs">{fmt(snap.spread)}</span>
-        <span className="num spreadpct">{spreadPct.toFixed(3)}%</span>
         <span className="midpx">
           {fmt(snap.mid)}
           <span className="arrow">{dir === 'up' ? ' ▲' : dir === 'down' ? ' ▼' : ''}</span>
+        </span>
+        <span className="spreadinfo">
+          <span className="spreadabs">${fmt(snap.spread)}</span>
+          <span className="spreadbps">{spreadBps.toFixed(1)} bps</span>
         </span>
       </div>
       {/* bids: best (tightest) just below the spread row, worst at bottom */}
