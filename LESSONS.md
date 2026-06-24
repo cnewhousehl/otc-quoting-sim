@@ -91,16 +91,26 @@ what/why for instructors.
   small/medium/large signed impact, slow pivots (read the tape, position into it).
 - ✅ **Sentiment fades.** A headline's effect on client bias decays over ~1.5 min.
 
-## Process / discipline (mostly Phase-3 grader)
+## Process / discipline (the post-trade scorecard)
 - ✅ **Infer fair from the tape, not one venue.** True mid is hidden; multiple
   books + a stale T2 mean no single mid is "the" price.
+- ✅ **Post-trade scorecard** — at session end (`engine/scorecard.js`, a pure
+  function over the event log + sampled equity path) the desk gets a **trader
+  archetype** (its strongest of six dimensions — P&L, speed, hedging, adverse-
+  selection avoidance, franchise, risk-adjusted), a **letter grade** that weights
+  outcome over hustle, the **P&L decomposition**, and headline metrics. The
+  archetype is *style* ("you played like the Sniper"); the grade is *outcome* —
+  so you can earn "Sharp Reader" and still grade D if you blew up over-hedging.
+- ✅ **Risk-adjusted, not raw P&L** — a Sortino-style ratio over the sampled
+  equity path rewards a steady book; max-drawdown and peak gross inventory are
+  reported alongside so a lucky-but-wild run doesn't read as skill.
 - ➕ **Markout discipline** — judge a fill by where the mid is 5/30s later.
-- ➕ **Risk-adjusted, not raw P&L** — Sortino-style scoring rewards a steady book.
 
 ## Execution discipline (additions)
-- 🔶 **Over-hedging in chop** *(planned report metric)* — hedging every tick in a
-  whippy tape churns the spread away; the end-of-session report will surface
-  hedge-count vs realized vol so the churn is visible (no new mechanics needed).
+- ✅ **Over-hedging in chop** *(now a scorecard metric)* — the scorecard reports
+  hedge count, average hedge slippage (bps), and hedge ratio, so churning the
+  full book every tick shows up as huge slippage dragging realized P&L — the
+  losses land in *hedge slippage*, not adverse selection, in the decomposition.
 
 ## Liquidity & regimes (plumbed / planned)
 - ✅ **Time-of-day** *(plumbed; effect deferred)* — the seed fixes a session start

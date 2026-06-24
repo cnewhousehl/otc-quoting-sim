@@ -20,6 +20,7 @@ import { evaluateQuoteFill } from './fill.js'
 import { resolveClient, buildDriftPath, createToxicDrift } from './client.js'
 import { createRfqGenerator } from './rfq.js'
 import { createNewsEngine, mergeInjections } from './news.js'
+import { buildScorecard } from './scorecard.js'
 import { getDifficulty } from '../config/difficulty.js'
 import { clientById, ROSTER } from '../config/clients.js'
 import { assetLiquidityNotional } from '../config/venues.js'
@@ -107,6 +108,10 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
   const favor = new Map() // clientId -> relationship favor in [0,1] (0.5 = neutral)
   const getFavor = (id) => favor.get(id) ?? 0.5
   const toxBump = new Map() // assetId -> clustered-toxic p_tox bump (Hard, Hawkes-style)
+  // Equity path (sampled) for the post-trade scorecard's risk-adjusted metrics
+  // (drawdown / Sortino) — sampled, not per-tick, to stay cheap.
+  const equitySamples = []
+  const EQUITY_SAMPLE_EVERY = 4
 
   function emit(rec) {
     const full = { tick: n, ...rec }
@@ -316,6 +321,14 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
       closeRfq(q.rfqId)
     }
 
+    // sample the equity/inventory path for the scorecard's risk metrics
+    if (n % EQUITY_SAMPLE_EVERY === 0 || n + 1 >= totalTicks) {
+      const snap = pnl.snapshot()
+      let grossUsd = 0
+      for (const id of assetIds) grossUsd += Math.abs((snap.positions[id] ?? 0) * price.mid(id))
+      equitySamples.push({ tick: n, timeSec: n * dt, equity: snap.equity, totalPnL: snap.totalPnL, grossUsd })
+    }
+
     n += 1
     if (n >= totalTicks) done = true
     return events
@@ -375,6 +388,8 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
     sessionClock,
     // reads
     getState, getEventLog: () => log.slice(),
+    getEquityPath: () => equitySamples.slice(),
+    scorecard: () => buildScorecard({ eventLog: log, equitySamples, finalState: getState(), dt }),
     getBookSnapshot: (venueId) => book.getBookSnapshot(venueId),
     estimateHedgeWidth,
     venueIds: () => book.venueIds(),
@@ -402,7 +417,7 @@ export function runFromSeed(seed, { difficulty = 'medium', tier = 'pro', config 
     }
     s.tick()
   }
-  return { eventLog: s.getEventLog(), finalState: s.getState() }
+  return { eventLog: s.getEventLog(), finalState: s.getState(), scorecard: s.scorecard() }
 }
 
 function applyAction(s, a) {

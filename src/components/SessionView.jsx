@@ -1,18 +1,27 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useSession } from '../sim/useSession.js'
 import Ladder from './Ladder.jsx'
+import Scorecard from './Scorecard.jsx'
 import { fmt, usd, usdCompact, signedUsd, px } from '../format.js'
 
 export default function SessionView({ startConfig, onExit }) {
   const sim = useSession(startConfig)
   const [denom, setDenom] = useState('coin')
   const [presets, setPresets] = useState([5, 10, 20, 40])
+  const [showCard, setShowCard] = useState(true)
   const { state } = sim
+  // Compute the scorecard once the session is over (deterministic over the log).
+  const done = !!state?.done
+  const card = useMemo(() => (done ? sim.session.current.scorecard() : null), [done, sim.session])
   if (!state) return <div className="loading">booting session…</div>
   const assets = sim.session.current.assetIds()
 
   return (
     <div className="desk">
+      {state.done && showCard && card && <Scorecard card={card} onExit={onExit} onReview={() => setShowCard(false)} />}
+      {state.done && !showCard && (
+        <button className="reopen-card" onClick={() => setShowCard(true)}>▲ scorecard</button>
+      )}
       <TopBar sim={sim} onExit={onExit} denom={denom} setDenom={setDenom} presets={presets} setPresets={setPresets} />
       <NewsBar state={state} />
       <div className="desk-body">
