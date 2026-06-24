@@ -19,8 +19,12 @@ export function createAmmVenue({ price, cfg }) {
   const sampleLevels = cfg.sampleLevels ?? 20
   const updateEvery = Math.max(1, cfg.updateEvery ?? 1)
   let heldMid = price.mid(cfg.assetId) // DEX reprices slowly (delayed), small size
-
-  const reserves = () => ({ Rx, Ry: Rx * heldMid, M: heldMid })
+  let stress = 0 // news stress: wider effective fee, shallower pool
+  const setStress = (s) => {
+    stress = s
+  }
+  const effFee = () => fee * (1 + 2 * stress)
+  const reserves = () => ({ Rx: Rx / (1 + 0.8 * stress), Ry: (Rx / (1 + 0.8 * stress)) * heldMid, M: heldMid })
 
   const mid = () => heldMid
 
@@ -37,10 +41,10 @@ export function createAmmVenue({ price, cfg }) {
     let vwap
     if (side === 'buy') {
       const dyOut = (y * dx) / (x - dx) // quote paid (pre-fee)
-      vwap = (dyOut * (1 + fee)) / dx
+      vwap = (dyOut * (1 + effFee())) / dx
     } else {
       const dyIn = (y * dx) / (x + dx) // quote received (pre-fee)
-      vwap = (dyIn * (1 - fee)) / dx
+      vwap = (dyIn * (1 - effFee())) / dx
     }
     const slippagePerUnit = side === 'buy' ? vwap - M : M - vwap
     return {
@@ -67,19 +71,21 @@ export function createAmmVenue({ price, cfg }) {
       const lo = step * k
       const hi = step * (k + 1)
       // marginal quote over (lo, hi] on each side, fee-adjusted, per base unit
-      const askPx = (((y * hi) / (x - hi) - (y * lo) / (x - lo)) * (1 + fee)) / step
-      const bidPx = (((y * lo) / (x + lo) - (y * hi) / (x + hi)) * (1 - fee)) / step * -1
+      const askPx = (((y * hi) / (x - hi) - (y * lo) / (x - lo)) * (1 + effFee())) / step
+      const bidPx = (((y * lo) / (x + lo) - (y * hi) / (x + hi)) * (1 - effFee())) / step * -1
       asks.push({ price: askPx, size: step })
       bids.push({ price: bidPx, size: step })
     }
-    return { mid: M, spread: asks[0].price - bids[0].price, bids, asks }
+    // Top-of-book spread for an AMM is just the round-trip fee (size→0); the
+    // ladder levels show the curve cost as you take size.
+    return { mid: M, spread: 2 * effFee() * M, bids, asks }
   }
 
   function estimateCost(side, size) {
     const { Rx: x, Ry: y, M } = reserves()
     let dx = Math.min(size, x * 0.98)
     const dy = side === 'buy' ? (y * dx) / (x - dx) : (y * dx) / (x + dx)
-    const vwap = side === 'buy' ? (dy * (1 + fee)) / dx : (dy * (1 - fee)) / dx
+    const vwap = side === 'buy' ? (dy * (1 + effFee())) / dx : (dy * (1 - effFee())) / dx
     return { vwap, filledSize: dx, partial: size > x * 0.98, slipBps: (Math.abs(vwap - M) / M) * 1e4, mid: M }
   }
 
@@ -87,5 +93,5 @@ export function createAmmVenue({ price, cfg }) {
     if (n % updateEvery === 0) heldMid = price.mid(cfg.assetId) // arb re-anchors on cadence
   }
 
-  return { id: cfg.id, assetId: cfg.assetId, type: 'amm', tier: cfg.tier ?? 'DEX', mid, getBookSnapshot, executeMarketable, estimateCost, tick }
+  return { id: cfg.id, assetId: cfg.assetId, type: 'amm', tier: cfg.tier ?? 'DEX', mid, getBookSnapshot, executeMarketable, estimateCost, tick, setStress }
 }

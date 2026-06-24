@@ -50,6 +50,7 @@ export function createPnL() {
       kind: 'client',
       assetId,
       side: clientBuys ? 'sell' : 'buy', // student's side
+      clientSide: clientBuys ? 'buy' : 'sell', // the client's side (for the tape)
       size,
       price,
       fairMid: m,

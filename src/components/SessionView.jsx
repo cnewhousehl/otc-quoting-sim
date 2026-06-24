@@ -6,17 +6,18 @@ import { fmt, usd, usdCompact, signedUsd, px } from '../format.js'
 export default function SessionView({ startConfig, onExit }) {
   const sim = useSession(startConfig)
   const [denom, setDenom] = useState('coin')
+  const [presets, setPresets] = useState([5, 10, 20, 40])
   const { state } = sim
   if (!state) return <div className="loading">booting session…</div>
   const assets = sim.session.current.assetIds()
 
   return (
     <div className="desk">
-      <TopBar sim={sim} onExit={onExit} denom={denom} setDenom={setDenom} />
+      <TopBar sim={sim} onExit={onExit} denom={denom} setDenom={setDenom} presets={presets} setPresets={setPresets} />
       <NewsBar state={state} />
       <div className="desk-body">
         <aside className="rfq-col">
-          <RfqInbox sim={sim} denom={denom} />
+          <RfqInbox sim={sim} denom={denom} presets={presets} />
         </aside>
         <aside className="manage-col">
           <Positions sim={sim} denom={denom} />
@@ -33,17 +34,23 @@ export default function SessionView({ startConfig, onExit }) {
   )
 }
 
-function TopBar({ sim, onExit, denom, setDenom }) {
+function TopBar({ sim, onExit, denom, setDenom, presets, setPresets }) {
   const { state, running, togglePause, session } = sim
+  const stress = state.newsStress ?? 0
   return (
     <header className="bar">
       <span className="title">OTC DESK</span>
       <span className="meta">{session.current.difficulty}</span>
       <span className="meta">{session.current.config.scenario}</span>
       <span className="meta">t {Math.floor(state.timeSec)}s · {Math.round(state.progress * 100)}%</span>
+      {stress > 0.15 && <span className="stress">⚠ vol {Math.round(stress * 100)}%</span>}
       <span className="meta">equity {usd(state.equity)}</span>
       <span className={`meta pnl ${state.totalPnL >= 0 ? 'pos' : 'neg'}`}>{signedUsd(state.totalPnL)}</span>
       <span className="spacer" />
+      <span className="presets-edit" title="quick-quote widths (bps) — click on an RFQ to auto-stream">
+        widths
+        <input value={presets.join(',')} onChange={(e) => setPresets(e.target.value.split(',').map((x) => Number(x.trim())).filter((x) => x > 0))} />
+      </span>
       <span className="denom">
         <button className={denom === 'coin' ? 'on' : ''} onClick={() => setDenom('coin')}>coin</button>
         <button className={denom === 'usd' ? 'on' : ''} onClick={() => setDenom('usd')}>$</button>
@@ -77,26 +84,29 @@ function NewsBar({ state }) {
 }
 
 // ---- left: RFQ inbox + live quotes -----------------------------------------
-function RfqInbox({ sim, denom }) {
+function RfqInbox({ sim, denom, presets }) {
   const { state } = sim
   return (
     <div className="panel fill">
       <div className="panel-h">RFQs <span className="badge">{state.pendingRfqs.length}</span></div>
       <div className="scroll">
         {state.pendingRfqs.length === 0 && <div className="empty">waiting for inbound…</div>}
-        {state.pendingRfqs.map((r) => <RfqCard key={r.id} rfq={r} sim={sim} denom={denom} />)}
+        {state.pendingRfqs.map((r) => <RfqCard key={r.id} rfq={r} sim={sim} denom={denom} presets={presets} />)}
         <LiveQuotes sim={sim} />
       </div>
     </div>
   )
 }
 
-function RfqCard({ rfq, sim, denom }) {
+function RfqCard({ rfq, sim, denom, presets }) {
   const venue = sim.venuesForAsset(rfq.assetId)[0]
   const mid = sim.getBook(venue)?.mid ?? rfq.refPrice
   const [w, setW] = useState(8)
   const [skew, setSkew] = useState(0)
   const pos = sim.state.positions[rfq.assetId] ?? 0
+  const quoteAt = (width) => {
+    sim.submitQuote(rfq.id, { bid: mid * (1 + (skew - width) / 1e4), ask: mid * (1 + (skew + width) / 1e4) })
+  }
   const bid = mid * (1 + (skew - w) / 1e4)
   const ask = mid * (1 + (skew + w) / 1e4)
   const ttlPct = Math.max(0, 100 - (rfq.ageTicks / rfq.pendingTtlTicks) * 100)
@@ -123,11 +133,16 @@ function RfqCard({ rfq, sim, denom }) {
         <span className="x">/</span>
         <span className="ask">{px(ask)}</span>
       </div>
-      <div className="sliders">
-        <label>width {w}bps<input type="range" min="1" max="120" value={w} onChange={(e) => setW(+e.target.value)} /></label>
-        <label>skew {skew}bps<input type="range" min="-50" max="50" value={skew} onChange={(e) => setSkew(+e.target.value)} /></label>
+      <div className="wfields">
+        <label>width<input type="number" step="0.5" value={w} onChange={(e) => setW(+e.target.value)} />bps</label>
+        <label>skew<input type="number" step="0.5" value={skew} onChange={(e) => setSkew(+e.target.value)} />bps</label>
       </div>
-      <button className="send" onClick={() => sim.submitQuote(rfq.id, { bid, ask })}>stream quote</button>
+      <div className="presets">
+        {presets.map((p) => (
+          <button key={p} className="preset" onClick={() => quoteAt(p)} title={`stream ${p}bps`}>{p}</button>
+        ))}
+      </div>
+      <button className="send" onClick={() => quoteAt(w)}>stream quote</button>
       <div className="ttl"><span style={{ width: `${ttlPct}%` }} /></div>
     </div>
   )
@@ -214,10 +229,12 @@ function Trades({ state, denom }) {
         {tape.length === 0 && <div className="empty">no prints yet</div>}
         {tape.map((t, i) => {
           const p = t.price ?? t.vwap
+          const isClient = t.kind === 'fill'
+          const side = isClient ? t.clientSide : t.side // client's side on a fill, yours on a hedge
           return (
-            <div key={i} className={`tprint ${t.side === 'buy' ? 'buy' : 'sell'}`}>
-              <span>{t.kind === 'fill' ? '◆ client' : '⌁ hedge'}</span>
-              <span>{t.assetId} {t.side} {denom === 'usd' ? usdCompact(t.size * p) : fmt(t.size, 2)}</span>
+            <div key={i} className={`tprint ${side === 'buy' ? 'buy' : 'sell'}`}>
+              <span>{isClient ? '◆ client' : '⌁ you'} {side}</span>
+              <span>{t.assetId} {denom === 'usd' ? usdCompact(t.size * p) : fmt(t.size, 2)}</span>
               <span className="tpx">{px(p)}</span>
             </div>
           )
@@ -231,38 +248,38 @@ function Trades({ state, denom }) {
 function AssetBook({ sim, asset, denom }) {
   const venues = sim.venuesForAsset(asset)
   const dir = sim.dirs[asset]
-  const primary = venues[0]
-  const mid = sim.getBook(primary)?.mid ?? 0
-  const [size, setSize] = useState(0.5)
-  const [hv, setHv] = useState(primary)
-  const v = venues.includes(hv) ? hv : primary
+  const mid = sim.getBook(venues[0])?.mid ?? 0
   const pos = sim.state.positions[asset] ?? 0
-  const sizeCoin = denom === 'usd' ? size / (mid || 1) : size
-
   return (
     <div className="abook">
       <div className="abook-h">
         <span className={`aname ${dir || ''}`}>{asset} {px(mid)} {dir === 'up' ? '▲' : dir === 'down' ? '▼' : ''}</span>
-        {Math.abs(pos) > 1e-9 && <span className={`apos ${pos > 0 ? 'long' : 'short'}`}>{pos > 0 ? '+' : '−'}{fmt(Math.abs(pos), 2)}</span>}
+        {Math.abs(pos) > 1e-9 && (
+          <span className={`apos ${pos > 0 ? 'long' : 'short'}`}>
+            {pos > 0 ? '+' : '−'}{fmt(Math.abs(pos), 2)}
+            <button className="flatmini" onClick={() => sim.hedge({ assetId: asset, venueId: venues[0], side: pos > 0 ? 'sell' : 'buy', size: Math.abs(pos) })}>flat</button>
+          </span>
+        )}
       </div>
       <div className="ladders">
-        {venues.map((vid) => (
-          <div key={vid} className="lwrap">
-            <div className="ltier">{sim.venueInfo(vid).tier}</div>
-            <Ladder snap={sim.getBook(vid)} dir={dir} denom={denom} compact depth={5} />
-          </div>
-        ))}
+        {venues.map((vid) => <VenueLadder key={vid} sim={sim} asset={asset} vid={vid} denom={denom} />)}
       </div>
-      <div className="abook-hedge">
-        <select value={v} onChange={(e) => setHv(e.target.value)}>
-          {venues.map((x) => <option key={x} value={x}>{sim.venueInfo(x).tier}</option>)}
-        </select>
+    </div>
+  )
+}
+
+function VenueLadder({ sim, asset, vid, denom }) {
+  const [size, setSize] = useState(0.5)
+  const mid = sim.getBook(vid)?.mid ?? 0
+  const sizeCoin = denom === 'usd' ? size / (mid || 1) : size
+  return (
+    <div className="lwrap">
+      <div className="ltier">{sim.venueInfo(vid).tier}</div>
+      <Ladder snap={sim.getBook(vid)} dir={sim.dirs[asset]} denom={denom} compact depth={5} />
+      <div className="vhedge">
         <input type="number" step="0.1" value={size} onChange={(e) => setSize(+e.target.value)} />
-        <button className="buy" onClick={() => sim.hedge({ assetId: asset, venueId: v, side: 'buy', size: Math.abs(sizeCoin) })}>buy</button>
-        <button className="sell" onClick={() => sim.hedge({ assetId: asset, venueId: v, side: 'sell', size: Math.abs(sizeCoin) })}>sell</button>
-        {Math.abs(pos) > 1e-9 && (
-          <button className="flat" onClick={() => sim.hedge({ assetId: asset, venueId: v, side: pos > 0 ? 'sell' : 'buy', size: Math.abs(pos) })}>flat</button>
-        )}
+        <button className="buy" onClick={() => sim.hedge({ assetId: asset, venueId: vid, side: 'buy', size: Math.abs(sizeCoin) })}>buy</button>
+        <button className="sell" onClick={() => sim.hedge({ assetId: asset, venueId: vid, side: 'sell', size: Math.abs(sizeCoin) })}>sell</button>
       </div>
     </div>
   )

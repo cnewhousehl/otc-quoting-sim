@@ -56,6 +56,9 @@ export function createBook({ rng, price, venues, dt = 0.25, crossVenueContagion 
     tick: (n) => {
       for (const h of handlers.values()) h.tick(n)
     },
+    setStress: (s) => {
+      for (const h of handlers.values()) h.setStress?.(s)
+    },
     venueIds: () => [...handlers.keys()],
     venuesForAsset: (assetId) => [...handlers.values()].filter((h) => h.assetId === assetId).map((h) => h.id),
     venueInfo: (venueId) => {

@@ -55,6 +55,12 @@ export function createPerpVenue({ rng, price, dt, cfg: rawCfg }) {
   let heldAnchor = price.mid(cfg.assetId) // displayed reference, refreshed discretely
   let heldEps = 0
   let lastTick = 0
+  let stress = 0 // news-driven stress: widens spread, thins depth
+  const STRESS_SPREAD = 2.5
+  const STRESS_DEPTH = 0.8
+  const setStress = (s) => {
+    stress = s
+  }
 
   // Displayed reference mid. The anchor/ε only refresh every `updateEvery` ticks
   // (T1 fast, T2/T3 slower) so the book updates on the order of seconds, not
@@ -63,13 +69,13 @@ export function createPerpVenue({ rng, price, dt, cfg: rawCfg }) {
     return heldAnchor + cfg.basis + heldEps + skewImpact + tox.skew(cfg.id)
   }
 
-  const effHalfSpread = () => cfg.halfSpread * tox.spreadMult(cfg.id)
+  const effHalfSpread = () => cfg.halfSpread * tox.spreadMult(cfg.id) * (1 + STRESS_SPREAD * stress)
 
   function levelSize(n, k, side) {
     const base = cfg.depthTop * Math.exp(-k / cfg.k0)
     const idx = (side === 'ask' ? IDX.jitterAsk : IDX.jitterBid) + k
     const jit = cfg.jitter > 0 ? 1 + cfg.jitter * (2 * rng.uniform(STREAMS.book, n, cfg.id, idx) - 1) : 1
-    const mult = resilience.get(`${cfg.id}:${side}`) * tox.depthMult(cfg.id, side)
+    const mult = (resilience.get(`${cfg.id}:${side}`) * tox.depthMult(cfg.id, side)) / (1 + STRESS_DEPTH * stress)
     return base * jit * mult
   }
 
@@ -173,5 +179,5 @@ export function createPerpVenue({ rng, price, dt, cfg: rawCfg }) {
     tox.observe(cfg.id, signed)
   }
 
-  return { id: cfg.id, assetId: cfg.assetId, type: 'perp', tier: cfg.tier, mid, getBookSnapshot, executeMarketable, estimateCost, tick, observeExternalFlow }
+  return { id: cfg.id, assetId: cfg.assetId, type: 'perp', tier: cfg.tier, mid, getBookSnapshot, executeMarketable, estimateCost, tick, observeExternalFlow, setStress }
 }

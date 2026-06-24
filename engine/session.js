@@ -154,7 +154,9 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
     for (const id of assetIds) midBefore[id] = price.mid(id)
     price.step(n, mergeInjections(toxicDrift.injectionAt(n), news.injectionAt(n)))
 
-    // (4) books + resilience/toxicity decay
+    // (4) books + resilience/toxicity decay; news stress widens spreads / thins
+    // depth around catalysts (so hedge cost rises and clients accept wider too)
+    book.setStress(news.stressAt(n))
     book.tick(n)
 
     // (8a) inventory mark-to-market from this tick's mid move (split GBM vs tox)
@@ -314,6 +316,7 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
       hedgeLog: p.hedgeLog,
       news: recentNews.slice(0, 5),
       nextNewsSec: news.ticksToNext(n) * dt,
+      newsStress: news.stressAt(n),
       sentiment: { ...sentiment },
       restingLimits: restingLimits.slice(),
     }

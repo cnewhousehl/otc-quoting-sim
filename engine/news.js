@@ -14,8 +14,11 @@ export function createNewsEngine({ rng, dt, assetIds, intervalMin = 3, catalogue
   const clampInterval = (m) => Math.min(10, Math.max(1, m))
   let intervalTicks = Math.round((clampInterval(intervalMin) * 60) / dt)
   const active = [] // { assets:Set, path, startTick }
+  const fireTicks = [] // ticks at which catalysts fired (for digestion stress)
   let nextAt = intervalTicks
   let seq = 0
+  const W_PRE = Math.max(1, Math.round(20 / dt)) // anticipation window (~20s before)
+  const W_POST = Math.max(1, Math.round(45 / dt)) // digestion window (~45s after)
 
   // Smooth half-sine bump of per-tick returns summing to `total` over H ticks
   // (starts slow, peaks, eases — a "pivot", not a gap).
@@ -41,6 +44,8 @@ export function createNewsEngine({ rng, dt, assetIds, intervalMin = 3, catalogue
     const assets = cat.scope === 'macro' ? assetIds : cat.assets.filter((a) => assetIds.includes(a))
     active.push({ assets: new Set(assets), path: buildPath(total, H), startTick: n + 1 })
 
+    fireTicks.push(n)
+    while (fireTicks.length && n - fireTicks[0] > W_POST) fireTicks.shift()
     const j = rng.uniform(STREAMS.news, n, 'jitter', 0)
     nextAt = n + Math.round(intervalTicks * (0.8 + 0.4 * j)) // ±20% jitter
     return {
@@ -69,12 +74,27 @@ export function createNewsEngine({ rng, dt, assetIds, intervalMin = 3, catalogue
     return out
   }
 
+  // Market stress in [0,1]: ramps up approaching the next catalyst (anticipation)
+  // and decays after recent ones (digestion). Drives wider spreads / thinner
+  // depth around news — which in turn lets clients accept wider quotes (the
+  // hedge cost widens too).
+  function stressAt(n) {
+    let s = 0
+    const tn = nextAt - n
+    if (tn >= 0 && tn < W_PRE) s = Math.max(s, 1 - tn / W_PRE)
+    for (const ft of fireTicks) {
+      const d = n - ft
+      if (d >= 0 && d < W_POST) s = Math.max(s, 1 - d / W_POST)
+    }
+    return s
+  }
+
   const ticksToNext = (n) => Math.max(0, nextAt - n)
   function setIntervalMin(m) {
     intervalTicks = Math.round((clampInterval(m) * 60) / dt)
   }
 
-  return { step, injectionAt, ticksToNext, setIntervalMin, _active: active }
+  return { step, injectionAt, stressAt, ticksToNext, setIntervalMin, _active: active }
 }
 
 // Merge two per-asset injection maps (toxic drift + news).

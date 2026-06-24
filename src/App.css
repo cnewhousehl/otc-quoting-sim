@@ -113,6 +113,25 @@ body {
 .favor.favored { color: var(--accent); border-color: var(--accent); }
 .favor.wary { color: var(--ask); border-color: var(--ask); }
 
+/* manual width/skew + presets */
+.wfields { display: flex; gap: 8px; margin: 6px 0 4px; }
+.wfields label { font-size: 10px; color: var(--dim); display: flex; align-items: center; gap: 3px; }
+.wfields input { width: 46px; background: #0d1116; color: var(--fg); border: 1px solid var(--grid); border-radius: 4px; font-size: 11px; padding: 2px 4px; font-family: inherit; }
+.presets { display: flex; gap: 4px; margin-bottom: 6px; }
+.preset { flex: 1; background: #0d1116; color: var(--accent); border: 1px solid var(--grid); border-radius: 4px; font-size: 11px; padding: 4px; cursor: pointer; font-family: inherit; }
+.preset:hover { border-color: var(--accent); }
+.presets-edit { font-size: 11px; color: var(--dim); display: flex; align-items: center; gap: 4px; }
+.presets-edit input { width: 90px; background: #0d1116; color: var(--fg); border: 1px solid var(--grid); border-radius: 4px; font-size: 11px; padding: 2px 5px; font-family: inherit; }
+.stress { color: var(--accent); font-size: 11px; }
+
+/* per-venue hedge under each mini ladder */
+.vhedge { display: flex; gap: 3px; margin-top: 3px; }
+.vhedge input { width: 38px; background: #0d1116; color: var(--fg); border: 1px solid var(--grid); border-radius: 3px; font-size: 10px; padding: 2px; font-family: inherit; }
+.vhedge button { flex: 1; border: none; border-radius: 3px; padding: 3px; font-family: inherit; font-size: 10px; font-weight: 700; cursor: pointer; }
+.vhedge .buy { background: var(--bid); color: #06140d; }
+.vhedge .sell { background: var(--ask); color: #1a0a06; }
+.flatmini { margin-left: 6px; background: #0d1116; color: var(--fg); border: 1px solid var(--grid); border-radius: 3px; font-size: 10px; padding: 1px 6px; cursor: pointer; font-family: inherit; }
+
 /* positions / pnl / trades */
 .posrow { display: flex; justify-content: space-between; padding: 3px 0; font-variant-numeric: tabular-nums; font-size: 13px; }
 .posrow.long .pq { color: var(--bid); }
