@@ -127,7 +127,6 @@ export function createPerpVenue({ rng, price, dt, cfg: rawCfg }) {
   }
 
   function tick(n) {
-    lastTick = n
     if (cfg.lagTau > 0) {
       const a = 1 - Math.exp(-dt / cfg.lagTau)
       lagged += (price.mid(cfg.assetId) - lagged) * a
