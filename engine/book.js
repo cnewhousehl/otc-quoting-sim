@@ -16,6 +16,7 @@
 
 import { createPerpVenue } from './perpVenue.js'
 import { createAmmVenue } from './amm.js'
+import { createAgentVenue } from './agentVenue.js'
 
 export function createBook({ rng, price, venues, dt = 0.25, crossVenueContagion = 0.4 }) {
   const handlers = new Map()
@@ -24,7 +25,9 @@ export function createBook({ rng, price, venues, dt = 0.25, crossVenueContagion 
     const handler =
       type === 'amm'
         ? createAmmVenue({ price, dt, cfg: v })
-        : createPerpVenue({ rng, price, dt, cfg: v })
+        : type === 'agent'
+          ? createAgentVenue({ rng, price, dt, cfg: v })
+          : createPerpVenue({ rng, price, dt, cfg: v })
     handlers.set(v.id, handler)
   }
 

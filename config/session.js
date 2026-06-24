@@ -3,7 +3,7 @@
 // Default session settings (PLAN.md §1.5, M9). One object tunes everything; the
 // engine reads it, no code edits to retune. Scenarios shift the price regime/vol.
 
-import { ASSET_UNIVERSE, buildVenues } from './venues.js'
+import { ASSET_UNIVERSE, buildVenues, buildAgentVenues } from './venues.js'
 
 export const SCENARIOS = {
   calm: { regime: 'flat', volMult: 1.0, jumpMult: 1.0, driftMag: 0 },
@@ -41,5 +41,8 @@ export function buildSessionWorld(cfg) {
     jumpSigma: cfg.jumpSigmaBase * sc.volMult,
   }))
   const baseUpdateTicks = Math.max(1, Math.round((cfg.bookUpdateSec ?? 2.5) / cfg.dt))
-  return { assets, venues: buildVenues(ASSET_UNIVERSE, { baseUpdateTicks }), universe: ASSET_UNIVERSE }
+  // bookStyle 'agent' (M11) swaps the parametric perp ladders for agent-MM
+  // matching LOBs; DEX venues stay AMMs either way. Default stays parametric.
+  const build = cfg.bookStyle === 'agent' ? buildAgentVenues : buildVenues
+  return { assets, venues: build(ASSET_UNIVERSE, { baseUpdateTicks }), universe: ASSET_UNIVERSE }
 }

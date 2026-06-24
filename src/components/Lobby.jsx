@@ -31,7 +31,7 @@ export default function Lobby({ tier = 'free', onStart }) {
       difficulty,
       tier,
       bookStyle,
-      config: { scenario: can(t, 'scenario', scenario) ? scenario : 'calm', sessionMinutes: Number(minutes), newsIntervalMin: Number(newsMin) },
+      config: { scenario: can(t, 'scenario', scenario) ? scenario : 'calm', sessionMinutes: Number(minutes), newsIntervalMin: Number(newsMin), bookStyle },
     })
   }
 

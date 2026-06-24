@@ -84,6 +84,57 @@ export function buildVenues(universe = ASSET_UNIVERSE, { baseUpdateTicks = 6 } =
   return out
 }
 
+// ---------------------------------------------------------------------------
+// Agent-MM venues (M11 / PLAN.md §1.8). Same exchange roster, but each perp
+// venue is now a POPULATION of maker agents posting limit orders into a
+// matching LOB (engine/agentVenue.js) instead of a parametric ladder. The
+// per-maker params are derived from the SAME exchange profile so the emergent
+// book stats land near the parametric venue's (tight+deep T1, wider+thin T2),
+// then toxicity/skew/impact/resilience emerge from the makers, not knobs.
+// DEX venues stay constant-product AMMs (a curve, not a maker population).
+const MAKER_POP = {
+  'binance-perp': { count: 5, invLimitNotional: 420_000, percSigma: 0.000025, reactTauLo: 0.5, reactTauHi: 2.5, infoNudge: 0.0016 },
+  'bybit-perp': { count: 4, invLimitNotional: 190_000, percSigma: 0.000070, reactTauLo: 1.5, reactTauHi: 5.0, infoNudge: 0.0030 },
+}
+
+export function buildAgentVenues(universe = ASSET_UNIVERSE, { baseUpdateTicks = 6 } = {}) {
+  const out = []
+  const ue = (mult) => Math.max(1, Math.round(baseUpdateTicks * mult))
+  for (const a of universe) {
+    for (const ex of a.venues) {
+      const p = EXCHANGES[ex]
+      const id = `${ex}:${a.id}`
+      if (p.type === 'amm') {
+        out.push({ id, assetId: a.id, type: 'amm', tier: p.tier, feeBps: p.feeBps, poolBase: p.poolNotional / a.refPrice, sampleLevels: p.sampleLevels, updateEvery: ue(p.updateMult) })
+        continue
+      }
+      const pop = MAKER_POP[ex]
+      const invLimit = pop.invLimitNotional / a.refPrice
+      const makers = []
+      for (let i = 0; i < pop.count; i++) {
+        const frac = pop.count > 1 ? i / (pop.count - 1) : 0 // 0..1 across the population
+        // Heterogeneity: tightest maker sets the inside; others sit progressively
+        // wider/slower/blinder so the population spans a realistic quality range.
+        const halfSpreadBps = p.halfSpreadBps * (0.8 + 0.7 * frac)
+        makers.push({
+          id: `${id}#m${i}`,
+          percSigma: pop.percSigma * (1 + 1.5 * frac),
+          halfSpreadBps,
+          levelStepBps: p.levelStepBps * (1 + 0.5 * frac),
+          levels: Math.max(4, Math.round(p.numLevels / pop.count / 4)),
+          sizeNotional: (p.depthTopNotional / pop.count) * (1.2 - 0.4 * frac),
+          gamma: 0.0015 / invLimit, // inv at limit ⇒ ~15 bps reservation skew
+          invLimit,
+          reactTau: pop.reactTauLo + (pop.reactTauHi - pop.reactTauLo) * frac,
+          infoNudge: pop.infoNudge * (1 + frac),
+        })
+      }
+      out.push({ id, assetId: a.id, type: 'agent', tier: p.tier, makers })
+    }
+  }
+  return out
+}
+
 // Venues that list an asset (for routing + RFQ pricing tolerance in M8).
 export function venuesForAsset(assetId, universe = ASSET_UNIVERSE) {
   const a = universe.find((x) => x.id === assetId)

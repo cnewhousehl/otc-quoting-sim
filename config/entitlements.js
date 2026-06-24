@@ -102,6 +102,13 @@ export function gateSessionConfig(requested = {}, tier = DEFAULT_TIER) {
     delete out.custom
   }
 
+  // Agent-MM books (M11) are a power feature gated behind the same entitlement
+  // as hand-tuned configs; lower tiers fall back to the parametric book.
+  if (out.bookStyle === 'agent' && !t.customConfig) {
+    gated.push({ feature: 'bookStyle', requested: 'agent', allowed: false, fallback: 'parametric' })
+    out.bookStyle = 'parametric'
+  }
+
   if (out.scenario && !t.scenarios.includes(out.scenario)) {
     const fallback = t.scenarios[0]
     gated.push({ feature: 'scenario', requested: out.scenario, allowed: t.scenarios.slice(), fallback })
