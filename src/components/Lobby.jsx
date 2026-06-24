@@ -90,8 +90,14 @@ export default function Lobby({ tier = 'free', onStart }) {
         </Field>
 
         <Field label={`Session length — ${minutes} min`}>
-          <input type="range" min="2" max={Number.isFinite(t.maxSessionMinutes) ? t.maxSessionMinutes : 60}
-            value={minutes} onChange={(e) => setMinutes(e.target.value)} />
+          <div className="chips">
+            <input type="range" min="2" max={Number.isFinite(t.maxSessionMinutes) ? t.maxSessionMinutes : 60}
+              value={Math.min(minutes, Number.isFinite(t.maxSessionMinutes) ? t.maxSessionMinutes : 60)}
+              onChange={(e) => setMinutes(e.target.value)} />
+            <input className="seed-in" type="number" min="1"
+              max={Number.isFinite(t.maxSessionMinutes) ? t.maxSessionMinutes : undefined}
+              value={minutes} onChange={(e) => setMinutes(e.target.value)} />
+          </div>
         </Field>
 
         <Field label={`News cadence — every ${newsMin} min`}>

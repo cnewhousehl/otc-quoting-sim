@@ -4,9 +4,12 @@ import SessionView from './components/SessionView.jsx'
 import { resolveActiveTier } from '../config/entitlements.js'
 import './App.css'
 
-// Tier comes from the build; ?tier= is honored only as a demo override.
+// Tier comes from the build. Dev/default = full access (instructor); the
+// free-to-play production build sets VITE_TIER=free. ?tier=free still lets you
+// preview the gated experience.
 const TIER = resolveActiveTier({
   urlParam: typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('tier') : null,
+  env: import.meta.env.VITE_TIER || 'instructor',
   allowUrlOverride: true,
 }).id
 
