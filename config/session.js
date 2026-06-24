@@ -14,14 +14,14 @@ export const SCENARIOS = {
 
 export const DEFAULT_SESSION = {
   dt: 0.25, // 250 ms tick
-  ttlTicks: 120, // quote TTL = 30 s
-  pendingTtlTicks: 48, // an un-quoted RFQ expires after 12 s
+  ttlTicks: 180, // quote TTL = 45 s once live
+  pendingTtlTicks: 240, // you get ~60 s to respond to an RFQ before it expires
   sessionMinutes: 20,
   scenario: 'calm',
   hedgeFeeBps: 1.0, // taker fee on hedges (student is maker on client fills → no fee)
   softInventoryUsd: 250_000, // discretionary warehouse warning threshold
-  jumpIntensityBase: 0.04, // per-asset Poisson λ baseline (× scenario jumpMult)
-  jumpSigmaBase: 0.01,
+  jumpIntensityBase: 0.012, // per-asset Poisson λ baseline (× scenario jumpMult) — rare on calm
+  jumpSigmaBase: 0.004,
   newsIntervalMin: 3, // news catalyst cadence (customizable 1–10)
 }
 
@@ -36,6 +36,7 @@ export function buildSessionWorld(cfg) {
     regime: sc.regime,
     driftMag: sc.driftMag,
     anchor: a.refPrice,
+    corr: a.corr ?? 0,
     jumpIntensity: cfg.jumpIntensityBase * sc.jumpMult,
     jumpSigma: cfg.jumpSigmaBase * sc.volMult,
   }))

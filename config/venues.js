@@ -34,11 +34,14 @@ export const EXCHANGES = {
 }
 
 // Asset universe with which venues list each name. Esoteric coins are DEX-only.
+// `sigma` is per-tick (250 ms) log-return stdev. These annualize to realistic
+// crypto vols (BTC ~55%, WIF ~165%) — at dt=0.25s, sigma·sqrt(4·86400·365)≈vol.
+// `corr` is the loading on the common market factor (alts co-move with majors).
 export const ASSET_UNIVERSE = [
-  { id: 'BTC', refPrice: 65_000, sigma: 0.0009, weight: 0.40, venues: ['binance-perp', 'bybit-perp', 'uni-amm'] },
-  { id: 'ETH', refPrice: 3_200, sigma: 0.0011, weight: 0.30, venues: ['binance-perp', 'bybit-perp', 'uni-amm'] },
-  { id: 'SOL', refPrice: 150, sigma: 0.0018, weight: 0.18, venues: ['binance-perp', 'bybit-perp', 'uni-amm'] },
-  { id: 'WIF', refPrice: 2.0, sigma: 0.0040, weight: 0.12, venues: ['uni-amm'] }, // DEX-only meme
+  { id: 'BTC', refPrice: 65_000, sigma: 0.000050, corr: 0.90, weight: 0.40, venues: ['binance-perp', 'bybit-perp', 'uni-amm'] },
+  { id: 'ETH', refPrice: 3_200, sigma: 0.000060, corr: 0.90, weight: 0.30, venues: ['binance-perp', 'bybit-perp', 'uni-amm'] },
+  { id: 'SOL', refPrice: 150, sigma: 0.000090, corr: 0.92, weight: 0.18, venues: ['binance-perp', 'bybit-perp', 'uni-amm'] },
+  { id: 'WIF', refPrice: 2.0, sigma: 0.000150, corr: 0.70, weight: 0.12, venues: ['uni-amm'] }, // DEX-only meme
 ]
 
 const bps = (px, b) => (px * b) / 1e4

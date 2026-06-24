@@ -49,6 +49,7 @@ function defaultsForAsset(a) {
     jumpIntensity: a.jumpIntensity ?? 0, // expected jumps per SECOND (Poisson λ)
     jumpSigma: a.jumpSigma ?? 0, // jump size stdev (return space)
     regimeSwitchProb: a.regimeSwitchProb ?? 0, // per-tick Markov switch prob (0 = fixed)
+    corr: a.corr ?? 0, // loading on the common market factor (0 = independent)
   }
 }
 
@@ -90,13 +91,18 @@ export function createPriceProcess({ rng, dt, assets }) {
   // Advance every asset one tick. `injected` maps assetId -> additive r_tox
   // (return space) for this tick; missing entries default to 0.
   function step(n, injected = null) {
+    // Common market factor: alts load on it (corr) so the whole complex co-moves
+    // — letting the student hedge alt risk via BTC/ETH. corr=0 ⇒ independent
+    // (the factor draw is unused, so existing single-asset paths are unchanged).
+    const marketFactor = rng.normal(STREAMS.price, n, '__market__', 0)
     for (const [id, cfg] of cfgs) {
       const s = state.get(id)
       maybeSwitchRegime(cfg, n)
       s.regime = cfg.regime
 
       const mu = regimeDrift(cfg, s.M)
-      const z = rng.normal(STREAMS.price, n, id, IDX.diffusion)
+      const zIdio = rng.normal(STREAMS.price, n, id, IDX.diffusion)
+      const z = cfg.corr > 0 ? cfg.corr * marketFactor + Math.sqrt(1 - cfg.corr * cfg.corr) * zIdio : zIdio
       // Itô correction so E[M] tracks the intended drift even at larger sigma.
       const diffusion = mu - 0.5 * cfg.sigma * cfg.sigma + cfg.sigma * z
 
