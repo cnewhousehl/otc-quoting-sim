@@ -98,7 +98,21 @@ One dial rewrites: `p_tox`, soft λ/floor/reservation, sharp q0/A_pick/θ/b,
 name transparency. Guardrail: even Hard fills a fair quote ~0.99 — toxic & fast,
 not untradeable. Free tier = easy/medium; Hard + custom = licensed (`entitlements.js`).
 
-## 7. Assumptions & open questions to audit (edit me)
+## 7. News catalysts — `engine/news.js`, `config/news.js`
+- On a timer (every `newsIntervalMin`, configurable **1–10 min**, ±20% jitter) a
+  catalyst fires and **pivots the hidden true mid** over a horizon — price action
+  is partly narrative-driven, not pure noise.
+- **10 catalysts** (macro or asset-specific), signed, **small/medium/large**
+  (≈0.4% / 1.2% / 3.5% total over 1.5 / 2.5 / 4 min). E.g. Fed hike (macro, −,
+  large), Saylor sells first BTC (BTC, −, large), WIF mania (WIF, +, large).
+- Drift is a **smooth half-sine path** in return space, injected into `M_t`
+  through the same channel as toxic drift (`mergeInjections`) — so it superposes
+  and the books/makers follow it **gradually** (read the tape, position into it).
+- ⚠️ **To audit**: magnitudes/horizons per catalyst; should makers *anticipate*
+  scheduled news (lower depth pre-event)? Add asset-correlation (a macro hit moves
+  everything together — currently same % per asset).
+
+## 8. Assumptions & open questions to audit (edit me)
 - [ ] **Funding rate** (perps): not modeled. Should warehoused inventory pay/earn
       funding? Adds a carry cost to holding — relevant to the skew-vs-hedge tradeoff.
 - [ ] **Internalization / quote skew** (requested lesson): you do **not** have to
