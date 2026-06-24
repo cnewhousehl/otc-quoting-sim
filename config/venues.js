@@ -15,8 +15,8 @@
 export const EXCHANGES = {
   'binance-perp': {
     tier: 'T1', type: 'perp',
-    halfSpreadBps: 0.6, levelStepBps: 0.8, epsBps: 0.1,
-    depthTopNotional: 150_000, k0: 20, numLevels: 50, jitter: 0.2,
+    halfSpreadBps: 0.6, levelStepBps: 0.6, levelGrowth: 0.045, epsBps: 0.1,
+    depthTopNotional: 280_000, k0: 30, numLevels: 80, jitter: 0.2,
     // Kyle-λ impact in RETURN space per (signed size / depthTop). Calibrated so
     // taking ~the top level moves the mid a few bps (not tens of %).
     kyleLambda: 0.0003, phi: 0.35, tau: 4, lagTau: 0,
@@ -25,8 +25,8 @@ export const EXCHANGES = {
   },
   'bybit-perp': {
     tier: 'T2', type: 'perp',
-    halfSpreadBps: 2.0, levelStepBps: 1.5, epsBps: 0.4,
-    depthTopNotional: 50_000, k0: 12, numLevels: 34, jitter: 0.35,
+    halfSpreadBps: 2.0, levelStepBps: 1.2, levelGrowth: 0.06, epsBps: 0.4,
+    depthTopNotional: 70_000, k0: 16, numLevels: 60, jitter: 0.35,
     kyleLambda: 0.0008, phi: 0.25, tau: 12, lagTau: 3, // thinner → more impact than T1
     updateMult: 1.5, // price-following venue, lags T1
     toxTau: 10, kSpread: 1.2, kDepth: 0.8,
@@ -74,6 +74,7 @@ export function buildVenues(universe = ASSET_UNIVERSE, { baseUpdateTicks = 6 } =
           levelStep: bps(a.refPrice, p.levelStepBps),
           epsSigma: bps(a.refPrice, p.epsBps),
           depthTop, k0: p.k0, numLevels: p.numLevels, jitter: p.jitter,
+          levelGrowth: p.levelGrowth,
           kyleLambda: p.kyleLambda, phi: p.phi, tau: p.tau, lagTau: p.lagTau, updateEvery: ue(p.updateMult),
           tox: { tau: p.toxTau, refFlow: depthTop * 2, kSpread: p.kSpread, kDepth: p.kDepth, kSkew: halfSpread },
         })

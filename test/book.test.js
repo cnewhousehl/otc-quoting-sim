@@ -83,11 +83,13 @@ describe('book — walk-the-book VWAP', () => {
     expect(r.slippagePerUnit).toBeGreaterThan(0)
   })
 
-  it('reports partial fill when depth is exhausted', () => {
-    const { book } = setup({ venue: { numLevels: 3, depthTop: 4, k0: 100 } })
-    const r = book.executeMarketable({ venueId: 'V1', side: 'buy', size: 1000 })
-    expect(r.partial).toBe(true)
-    expect(r.filledSize).toBeLessThan(1000)
+  it('a marketable order always fills the full size by sweeping the book (no pulled liquidity)', () => {
+    const big = setup({ venue: { numLevels: 3, depthTop: 4, k0: 100 } }).book.executeMarketable({ venueId: 'V1', side: 'buy', size: 1000 })
+    expect(big.partial).toBe(false)
+    expect(big.filledSize).toBeCloseTo(1000, 3)
+    // and sweeping deep costs a worse VWAP than a small clip
+    const small = setup({ venue: { numLevels: 3, depthTop: 4, k0: 100 } }).book.executeMarketable({ venueId: 'V1', side: 'buy', size: 5 })
+    expect(big.vwap).toBeGreaterThan(small.vwap)
   })
 })
 

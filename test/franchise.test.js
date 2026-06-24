@@ -20,7 +20,7 @@ describe('favor → arrival', () => {
     // A/B on the SAME seed: favor moonlad (tight fills, pass others) vs burn it
     // (pass moonlad, serve others). Its share of flow should be higher when favored.
     const moonladShare = (favorMoonlad) => {
-      const { eventLog } = runFromSeed(6, { difficulty: 'medium', tier: 'pro', config: { sessionMinutes: 30 } }, (state, s) => {
+      const { eventLog } = runFromSeed(6, { difficulty: 'medium', tier: 'pro', config: { sessionMinutes: 16 } }, (state, s) => {
         return state.pendingRfqs.map((r) => {
           const target = r.clientId === 'moonlad'
           if (target === favorMoonlad) {

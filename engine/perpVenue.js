@@ -28,6 +28,7 @@ function defaults(cfg) {
     epsSigma: cfg.epsSigma ?? 0,
     halfSpread: cfg.halfSpread,
     levelStep: cfg.levelStep,
+    levelGrowth: cfg.levelGrowth ?? 0,
     depthTop: cfg.depthTop,
     k0: cfg.k0 ?? 4,
     numLevels: cfg.numLevels ?? 25,
@@ -55,7 +56,6 @@ export function createPerpVenue({ rng, price, dt, cfg: rawCfg }) {
   let heldAnchor = price.mid(cfg.assetId) // displayed reference, refreshed discretely
   let heldEps = 0
   let heldTick = 0 // tick of the last refresh — size jitter holds between refreshes
-  let lastTick = 0
   let stress = 0 // news-driven stress: widens spread, thins depth
   const STRESS_SPREAD = 2.5
   const STRESS_DEPTH = 0.8
@@ -72,24 +72,58 @@ export function createPerpVenue({ rng, price, dt, cfg: rawCfg }) {
 
   const effHalfSpread = () => cfg.halfSpread * tox.spreadMult(cfg.id) * (1 + STRESS_SPREAD * stress)
 
-  function levelSize(n, k, side) {
-    const base = cfg.depthTop * Math.exp(-k / cfg.k0)
+  // Per-level resting size = a depletable top-book (decays with depth, thins under
+  // flow/news) PLUS a deep non-depletable tail so a marketable sweep ALWAYS fills
+  // (just at worse prices) — resting liquidity can't be pulled.
+  function levelSize(k, side) {
     const idx = (side === 'ask' ? IDX.jitterAsk : IDX.jitterBid) + k
     const jit = cfg.jitter > 0 ? 1 + cfg.jitter * (2 * rng.uniform(STREAMS.book, heldTick, cfg.id, idx) - 1) : 1
     const mult = (resilience.get(`${cfg.id}:${side}`) * tox.depthMult(cfg.id, side)) / (1 + STRESS_DEPTH * stress)
-    return base * jit * mult
+    const top = cfg.depthTop * Math.exp(-k / cfg.k0) * jit * mult // depletable
+    const tail = cfg.depthTop * 0.2 * jit // deep resting liquidity, always present
+    return top + tail
   }
 
-  function buildLadder(n) {
+  // Level price offset grows with depth: tight near top, steps WIDEN deeper, so
+  // the visible book spans a realistic price range and big clips clear deep/wide.
+  const levelOffset = (k) => cfg.levelStep * k * (1 + (cfg.levelGrowth ?? 0) * k)
+  const levelPrice = (m, hs, k, side) => (side === 'ask' ? m + hs + levelOffset(k) : m - hs - levelOffset(k))
+
+  function buildLadder() {
     const m = refMid()
     const hs = effHalfSpread()
     const bids = []
     const asks = []
     for (let k = 0; k < cfg.numLevels; k++) {
-      asks.push({ price: m + hs + k * cfg.levelStep, size: levelSize(n, k, 'ask') })
-      bids.push({ price: m - hs - k * cfg.levelStep, size: levelSize(n, k, 'bid') })
+      asks.push({ price: levelPrice(m, hs, k, 'ask'), size: levelSize(k, 'ask') })
+      bids.push({ price: levelPrice(m, hs, k, 'bid'), size: levelSize(k, 'bid') })
     }
     return { mid: m, spread: 2 * hs, bids, asks }
+  }
+
+  // Sweep the book for a marketable order: walk levels (extending past the
+  // displayed depth at progressively worse prices) until the FULL size fills.
+  // Resting liquidity can't be pulled — you always get filled, just deeper.
+  function walk(side, size) {
+    const m = refMid()
+    const hs = effHalfSpread()
+    const ladderSide = side === 'buy' ? 'ask' : 'bid'
+    let remaining = size
+    let cost = 0
+    let filled = 0
+    let lastK = 0
+    for (let k = 0; k < 50000 && remaining > 1e-9; k++) {
+      const sz = levelSize(k, ladderSide)
+      if (sz <= 0) continue
+      const take = Math.min(remaining, sz)
+      cost += take * levelPrice(m, hs, k, ladderSide)
+      filled += take
+      remaining -= take
+      lastK = k
+    }
+    // marginal (clearing) bps you swept to — used for the post-trade impact
+    const marginalBps = (levelOffset(lastK) / m) * 1e4
+    return { m, filled, vwap: filled > 0 ? cost / filled : m, partial: remaining > 1e-6, marginalBps }
   }
 
   function tick(n) {
@@ -109,31 +143,18 @@ export function createPerpVenue({ rng, price, dt, cfg: rawCfg }) {
     skewImpact *= 0.997 // accumulated impact heals slowly (temporary component)
   }
 
-  const getBookSnapshot = () => buildLadder(lastTick)
+  const getBookSnapshot = () => buildLadder()
   const mid = () => refMid()
 
   function executeMarketable({ side, size }) {
-    const ladder = buildLadder(lastTick)
-    const midPx = ladder.mid
-    const levels = side === 'buy' ? ladder.asks : ladder.bids
-    let remaining = size
-    let cost = 0
-    let filled = 0
-    const consumed = []
-    for (const lvl of levels) {
-      if (remaining <= 0) break
-      const take = Math.min(remaining, lvl.size)
-      cost += take * lvl.price
-      filled += take
-      remaining -= take
-      consumed.push({ price: lvl.price, size: take })
-    }
-    const vwap = filled > 0 ? cost / filled : midPx
+    const { m: midPx, filled, vwap, partial, marginalBps } = walk(side, size)
     const slippagePerUnit = side === 'buy' ? vwap - midPx : midPx - vwap
 
-    // Permanent Kyle-λ impact, signed; φ fraction feeds the true mid.
-    const signed = side === 'buy' ? filled : -filled
-    const impactReturn = cfg.kyleLambda * (signed / cfg.depthTop)
+    // Post-sweep impact is proportional to HOW DEEP you swept (not size/depthTop):
+    // the venue mid shifts a fraction of the clearing level (temporary, heals via
+    // skewImpact decay), and φ of that informs the true mid (information leakage).
+    const signed = side === 'buy' ? 1 : -1
+    const impactReturn = signed * 0.32 * (marginalBps / 1e4)
     skewImpact += midPx * impactReturn
     if (cfg.phi !== 0 && impactReturn !== 0) price.nudge(cfg.assetId, cfg.phi * impactReturn)
 
@@ -146,33 +167,19 @@ export function createPerpVenue({ rng, price, dt, cfg: rawCfg }) {
       side,
       requestedSize: size,
       filledSize: filled,
-      partial: remaining > 1e-12,
+      partial,
       vwap,
       mid: midPx,
       slippagePerUnit,
       slippage: slippagePerUnit * filled,
       impactReturn,
-      consumed,
     }
   }
 
-  // Non-mutating estimate of the cost (bps vs mid) to take `size` on a side —
-  // for showing the student how expensive a clip is to hedge before they quote.
+  // Non-mutating estimate of the cost (bps vs mid) to sweep `size` on a side.
   function estimateCost(side, size) {
-    const ladder = buildLadder(lastTick)
-    const levels = side === 'buy' ? ladder.asks : ladder.bids
-    let remaining = size
-    let cost = 0
-    let filled = 0
-    for (const lvl of levels) {
-      if (remaining <= 0) break
-      const take = Math.min(remaining, lvl.size)
-      cost += take * lvl.price
-      filled += take
-      remaining -= take
-    }
-    const vwap = filled > 0 ? cost / filled : ladder.mid
-    return { vwap, filledSize: filled, partial: remaining > 1e-9, slipBps: (Math.abs(vwap - ladder.mid) / ladder.mid) * 1e4, mid: ladder.mid }
+    const { m, filled, vwap, partial } = walk(side, size)
+    return { vwap, filledSize: filled, partial, slipBps: (Math.abs(vwap - m) / m) * 1e4, mid: m }
   }
 
   // Cross-venue contagion (M9.6): aggressive flow on a sibling venue makes THIS
