@@ -1,0 +1,68 @@
+// config/difficulty.js
+//
+// The Easy/Medium/Hard parameter bundle (PLAN.md Q6). A single difficulty dial
+// rewrites the whole engine's behavior. Values marked "(Q6)" are the spec's
+// concrete coefficients; auxiliary constants needed by the math but not pinned
+// in Q6 are chosen here and tuned jointly with the Q7 calibration suite (M10).
+//
+// `hazardScale` is the global D_diff multiplier on every fill hazard — it brings
+// the per-tick cumulative hazard into a sane range given dt/TTL (M10 owns its
+// final value). Session-level knobs (arrival, maxPendingRFQs, transparency) are
+// consumed by M8/M9.
+
+// Auxiliary (non-Q6) constants shared across levels unless overridden.
+const AUX = {
+  softS1: 3.0, // soft logistic amplitude
+  softB: 0.8, // soft logistic slope (σ)
+  sharpLambda: 0.4, // sharp contact rate (spike comes from g_sharp, not λ)
+  rho: 0.85, // toxic-drift exponential decay per tick
+  xRef: 5, // size reference for L(X)
+  tauReact: 2.0, // decision-latency time constant (s)
+}
+
+function level({ pTox, softLambda, s0, omega, q0, aPick, bSharp, theta, pickoffScale, deltaTox, N, eta, hazardScale, arrivalRate, maxPendingRFQs, transparency }) {
+  return {
+    pTox, // (Q6) sharp/toxic share of flow
+    soft: { lambda: softLambda, s0, s1: AUX.softS1, omega, b: AUX.softB }, // (Q6) λ_soft, s0, ω_soft
+    // (Q6) q0, A_pick, θ_sharp, b_sharp; pickoffScale is the §1.3 "stale-pickoff
+    // aggression" dial (damped on easy) applied to the pickoff gain.
+    sharp: { lambda: AUX.sharpLambda, q0, aPick, theta, b: bSharp, pickoffScale },
+    toxic: { deltaTox, N, rho: AUX.rho }, // (Q6) δ_tox, N
+    eta, // (Q6) size sensitivity η
+    xRef: AUX.xRef,
+    tauReact: AUX.tauReact,
+    hazardScale, // global D_diff (M10-tunable)
+    arrivalRate, // (Q6) RFQ/s — consumed by M8
+    maxPendingRFQs, // (Q6) — consumed by M8
+    transparency, // (Q6) name→toxicity reveal — consumed by M9 UI
+  }
+}
+
+export const DIFFICULTY = {
+  easy: level({
+    pTox: 0.15, softLambda: 0.4, s0: 0.75, omega: 2.0,
+    q0: 0.02, aPick: 0.6, bSharp: 0.6, theta: 0.3, pickoffScale: 0.6,
+    deltaTox: 0.8, N: 16, eta: 0.3,
+    hazardScale: 0.075, arrivalRate: 0.5, maxPendingRFQs: 3, transparency: 'full',
+  }),
+  medium: level({
+    pTox: 0.35, softLambda: 0.32, s0: 0.6, omega: 1.4,
+    q0: 0.02, aPick: 1.4, bSharp: 0.45, theta: 0.1, pickoffScale: 1.0,
+    deltaTox: 1.6, N: 24, eta: 0.2,
+    hazardScale: 0.075, arrivalRate: 0.8, maxPendingRFQs: 5, transparency: 'archetype',
+  }),
+  hard: level({
+    pTox: 0.6, softLambda: 0.28, s0: 0.5, omega: 1.0,
+    q0: 0.03, aPick: 2.6, bSharp: 0.35, theta: 0.0, pickoffScale: 1.0,
+    deltaTox: 2.6, N: 32, eta: 0.12,
+    hazardScale: 0.075, arrivalRate: 1.2, maxPendingRFQs: 8, transparency: 'hidden',
+  }),
+}
+
+export const DIFFICULTY_LEVELS = Object.freeze(['easy', 'medium', 'hard'])
+
+export function getDifficulty(name) {
+  const d = DIFFICULTY[name]
+  if (!d) throw new Error(`unknown difficulty: ${name}`)
+  return d
+}
