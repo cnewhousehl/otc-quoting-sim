@@ -19,6 +19,7 @@ import { createQuoteBook } from './quote.js'
 import { evaluateQuoteFill } from './fill.js'
 import { resolveClient, buildDriftPath, createToxicDrift } from './client.js'
 import { createRfqGenerator } from './rfq.js'
+import { createNewsEngine, mergeInjections } from './news.js'
 import { getDifficulty } from '../config/difficulty.js'
 import { clientById, ROSTER } from '../config/clients.js'
 import { assetLiquidityNotional } from '../config/venues.js'
@@ -43,6 +44,8 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
   const quotes = createQuoteBook({ ttlTicks: cfg.ttlTicks })
   const toxicDrift = createToxicDrift()
   const rfqGen = createRfqGenerator({ rng, dt, difficulty: diff, universe, roster: ROSTER, liquidityNotional: assetLiquidityNotional })
+  const news = createNewsEngine({ rng, dt, assetIds: price.assetIds(), intervalMin: cfg.newsIntervalMin })
+  const recentNews = []
 
   const assetIds = price.assetIds()
   for (const id of assetIds) pnl.setMark(id, price.mid(id))
@@ -105,10 +108,10 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
     if (done) return []
     const events = []
 
-    // (2-3) advance true mid with any active toxic drift + GBM + jumps
+    // (2-3) advance true mid with active toxic drift + news drift + GBM + jumps
     const midBefore = {}
     for (const id of assetIds) midBefore[id] = price.mid(id)
-    price.step(n, toxicDrift.injectionAt(n))
+    price.step(n, mergeInjections(toxicDrift.injectionAt(n), news.injectionAt(n)))
 
     // (4) books + resilience/toxicity decay
     book.tick(n)
@@ -120,6 +123,14 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
       attr[id] = { midBefore: midBefore[id], midAfter: price.mid(id), rGBM: c.rGBM }
     }
     pnl.onTick(attr)
+
+    // (5a) news catalyst — pivots the true mid over a horizon
+    const newsEv = news.step(n)
+    if (newsEv) {
+      recentNews.unshift(newsEv)
+      if (recentNews.length > 8) recentNews.pop()
+      events.push(emit({ type: 'news', catId: newsEv.catId, headline: newsEv.headline, scope: newsEv.scope, assets: newsEv.assets, direction: newsEv.direction, magnitude: newsEv.magnitude }))
+    }
 
     // (5) create an RFQ (toxicity pre-sampled at creation)
     const rfq = rfqGen.step(n, pending.size)
@@ -203,6 +214,8 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
       pendingRfqs: [...pending.values()].map((r) => ({ ...r, ageTicks: n - r.tick, pendingTtlTicks: cfg.pendingTtlTicks })),
       blotter: p.blotter,
       hedgeLog: p.hedgeLog,
+      news: recentNews.slice(0, 5),
+      nextNewsSec: news.ticksToNext(n) * dt,
     }
   }
 

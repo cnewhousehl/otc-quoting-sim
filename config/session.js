@@ -22,6 +22,7 @@ export const DEFAULT_SESSION = {
   softInventoryUsd: 250_000, // discretionary warehouse warning threshold
   jumpIntensityBase: 0.04, // per-asset Poisson λ baseline (× scenario jumpMult)
   jumpSigmaBase: 0.01,
+  newsIntervalMin: 3, // news catalyst cadence (customizable 1–10)
 }
 
 // Build the concrete asset + venue arrays for a session from the universe and a

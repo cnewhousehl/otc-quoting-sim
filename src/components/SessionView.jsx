@@ -13,6 +13,7 @@ export default function SessionView({ startConfig, onExit }) {
   return (
     <div className="terminal-wide">
       <TopBar sim={sim} onExit={onExit} />
+      <NewsBar state={state} />
       <div className="layout">
         <aside className="col rfqs">
           <RfqInbox sim={sim} />
@@ -55,6 +56,25 @@ function TopBar({ sim, onExit }) {
       <button className="ctl" onClick={togglePause}>{running ? '⏸' : '▶'}</button>
       <button className="ctl" onClick={onExit}>exit</button>
     </header>
+  )
+}
+
+function NewsBar({ state }) {
+  const latest = state.news && state.news[0]
+  const next = Math.ceil(state.nextNewsSec ?? 0)
+  return (
+    <div className="newsbar">
+      <span className="news-tag">NEWS</span>
+      {latest ? (
+        <span className={`news-head ${latest.direction > 0 ? 'up' : 'down'}`}>
+          {latest.direction > 0 ? '▲' : '▼'} {latest.headline}
+          <em>{latest.magnitude}{latest.scope === 'asset' ? ` · ${latest.assets.join('/')}` : ' · macro'}</em>
+        </span>
+      ) : (
+        <span className="news-head dim">watching the wires…</span>
+      )}
+      <span className="news-next">next in {next}s</span>
+    </div>
   )
 }
 

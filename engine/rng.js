@@ -24,6 +24,7 @@ export const STREAMS = Object.freeze({
   rfqSpec: 6,
   execHazard: 7,
   venueReact: 8,
+  news: 9,
 })
 
 const U64 = (x) => BigInt.asUintN(64, x)

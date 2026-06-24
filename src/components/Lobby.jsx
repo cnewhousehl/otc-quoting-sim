@@ -17,6 +17,7 @@ export default function Lobby({ tier = 'free', onStart }) {
   const [bookStyle, setBookStyle] = useState('parametric')
   const [scenario, setScenario] = useState('calm')
   const [minutes, setMinutes] = useState(Math.min(10, t.maxSessionMinutes))
+  const [newsMin, setNewsMin] = useState(3)
   const [seedMode, setSeedMode] = useState('random')
   const [seed, setSeed] = useState(12345)
 
@@ -29,7 +30,7 @@ export default function Lobby({ tier = 'free', onStart }) {
       difficulty,
       tier,
       bookStyle,
-      config: { scenario: can(t, 'scenario', scenario) ? scenario : 'calm', sessionMinutes: Number(minutes) },
+      config: { scenario: can(t, 'scenario', scenario) ? scenario : 'calm', sessionMinutes: Number(minutes), newsIntervalMin: Number(newsMin) },
     })
   }
 
@@ -91,6 +92,10 @@ export default function Lobby({ tier = 'free', onStart }) {
         <Field label={`Session length — ${minutes} min`}>
           <input type="range" min="2" max={Number.isFinite(t.maxSessionMinutes) ? t.maxSessionMinutes : 60}
             value={minutes} onChange={(e) => setMinutes(e.target.value)} />
+        </Field>
+
+        <Field label={`News cadence — every ${newsMin} min`}>
+          <input type="range" min="1" max="10" value={newsMin} onChange={(e) => setNewsMin(e.target.value)} />
         </Field>
 
         <Field label="Seed">
