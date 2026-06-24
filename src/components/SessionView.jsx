@@ -125,10 +125,10 @@ function RfqCard({ rfq, sim, denom, presets }) {
           {rfq.biasShown && <span className={`bias ${rfq.biasLabel}`}>{rfq.biasLabel}</span>}
           {rfq.favorShown && rfq.favorLabel !== 'neutral' && <span className={`favor ${rfq.favorLabel}`}>{rfq.favorLabel === 'favored' ? '★ favored' : 'wary'}</span>}
         </span>
-        <span className="amt">{usd(rfq.notional)}</span>
+        <span className="amt">{usdCompact(rfq.notional)}</span>
       </div>
       <div className="rfq-sub">
-        <span>{rfq.assetId} · {denom === 'usd' ? usdCompact(rfq.notional) : `${fmt(rfq.size, 3)}`}</span>
+        <span>{rfq.assetId} · {fmt(rfq.size, 3)}</span>
         {hc && hc.bps != null && <span className="hedgehint">hedge ~{hc.bps.toFixed(0)}bps {hc.tier}</span>}
       </div>
       {pos !== 0 && <div className={`pos-hint ${pos > 0 ? 'long' : 'short'}`}>you {pos > 0 ? 'long' : 'short'} {fmt(Math.abs(pos), 2)} — skew to flatten</div>}
@@ -287,7 +287,7 @@ function VenueLadder({ sim, asset, vid, denom }) {
   return (
     <div className="lwrap">
       <div className="ltier">{sim.venueInfo(vid).tier}</div>
-      <Ladder snap={sim.getBook(vid)} dir={sim.dirs[asset]} denom={denom} compact depth={10} />
+      <Ladder snap={sim.getBook(vid)} dir={sim.dirs[asset]} denom={denom} compact depth={10} showBps={sim.session.current.difficulty === 'easy'} />
       <div className="vhedge">
         <input type="number" step="0.1" value={size} onChange={(e) => setSize(+e.target.value)} />
         <button className="buy" onClick={() => sim.hedge({ assetId: asset, venueId: vid, side: 'buy', size: Math.abs(sizeCoin) })}>buy</button>

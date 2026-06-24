@@ -15,7 +15,7 @@ function withCumulative(levels, depth) {
 const sizeCell = (lvl, denom) => (denom === 'usd' ? usdCompact(lvl.usd) : fmt(lvl.size))
 const totalCell = (lvl, denom) => (denom === 'usd' ? usdCompact(lvl.usdTotal) : fmt(lvl.total))
 
-export default function Ladder({ snap, dir = 'flat', denom = 'coin', compact = false, depth = 8 }) {
+export default function Ladder({ snap, dir = 'flat', denom = 'coin', compact = false, depth = 8, showBps = false }) {
   if (!snap) return <div className="loading">…</div>
   const askRows = withCumulative(snap.asks, depth)
   const bidRows = withCumulative(snap.bids, depth)
@@ -25,14 +25,14 @@ export default function Ladder({ snap, dir = 'flat', denom = 'coin', compact = f
   return (
     <div className={`book ${compact ? 'compact' : ''}`}>
       <div className="cols">
-        <span>Price</span>
+        <span>{showBps ? 'bps · Price' : 'Price'}</span>
         <span className="num">Size</span>
         <span className="num">Total</span>
       </div>
       {askRows
         .slice()
         .reverse()
-        .map((l, i) => <Row key={`a${i}`} lvl={l} side="ask" maxTotal={maxTotal} denom={denom} />)}
+        .map((l, i) => <Row key={`a${i}`} lvl={l} side="ask" maxTotal={maxTotal} denom={denom} mid={snap.mid} showBps={showBps} />)}
       <div className={`midrow ${dir}`}>
         <span className="midpx">
           {px(snap.mid)}
@@ -42,17 +42,21 @@ export default function Ladder({ snap, dir = 'flat', denom = 'coin', compact = f
           <span className="spreadbps">{spreadBps.toFixed(1)} bps</span>
         </span>
       </div>
-      {bidRows.map((l, i) => <Row key={`b${i}`} lvl={l} side="bid" maxTotal={maxTotal} denom={denom} />)}
+      {bidRows.map((l, i) => <Row key={`b${i}`} lvl={l} side="bid" maxTotal={maxTotal} denom={denom} mid={snap.mid} showBps={showBps} />)}
     </div>
   )
 }
 
-function Row({ lvl, side, maxTotal, denom }) {
+function Row({ lvl, side, maxTotal, denom, mid, showBps }) {
   const pct = Math.max(1.5, (lvl.total / maxTotal) * 100)
+  const bps = mid ? (Math.abs(lvl.price - mid) / mid) * 1e4 : 0
   return (
     <div className={`row ${side}`}>
       <span className="depthbar" style={{ width: `${pct}%` }} />
-      <span className="px">{px(lvl.price)}</span>
+      <span className="px">
+        {showBps && <span className="lvbps">{bps.toFixed(1)}</span>}
+        {px(lvl.price)}
+      </span>
       <span className="num sz">{sizeCell(lvl, denom)}</span>
       <span className="num tot">{totalCell(lvl, denom)}</span>
     </div>

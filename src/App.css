@@ -70,8 +70,8 @@ body {
 
 /* body: rfq | manage | books */
 .desk-body { display: flex; gap: 8px; padding: 8px; flex: 1; min-height: 0; }
-.rfq-col { width: 260px; flex: 0 0 auto; display: flex; min-height: 0; }
-.manage-col { width: 220px; flex: 0 0 auto; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.rfq-col { width: 300px; flex: 0 0 auto; display: flex; min-height: 0; }
+.manage-col { width: 215px; flex: 0 0 auto; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
 .books-grid { flex: 1; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 8px; min-height: 0; min-width: 0; }
 
 .panel { border: 1px solid var(--grid); border-radius: 6px; padding: 8px; background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
@@ -194,6 +194,7 @@ body {
 .row.bid .px { color: var(--bid); }
 .row .sz { color: var(--fg); }
 .row .tot { color: var(--dim); }
+.lvbps { color: var(--dim); margin-right: 6px; font-size: 0.85em; }
 .midrow { display: flex; align-items: baseline; justify-content: space-between; padding: 4px 6px; margin: 2px 0; background: #0d1116; border-top: 1px solid var(--grid); border-bottom: 1px solid var(--grid); }
 .book:not(.compact) .midrow { padding: 8px 16px; }
 .midrow .midpx { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--fg); }
