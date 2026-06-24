@@ -71,7 +71,7 @@ export default function App() {
           {running ? '⏸ pause' : '▶ run'}
         </button>
       </header>
-      {view ? <Ladder snap={view.snap} /> : <div className="loading">booting…</div>}
+      {view ? <Ladder snap={view.snap} dir={view.dir} /> : <div className="loading">booting…</div>}
       <footer className="bar foot">
         <span className="meta">tick {DT * 1000}ms</span>
         <span className="meta">repaint {BOOK_RENDER_MS}ms</span>
@@ -94,7 +94,7 @@ function withCumulative(levels) {
   })
 }
 
-function Ladder({ snap }) {
+function Ladder({ snap, dir }) {
   const askRows = withCumulative(snap.asks.slice(0, LADDER_DEPTH)) // best → worst
   const bidRows = withCumulative(snap.bids.slice(0, LADDER_DEPTH)) // best → worst
   const maxTotal = Math.max(
@@ -118,10 +118,14 @@ function Ladder({ snap }) {
         .map((lvl, i) => (
           <Row key={`a${i}`} lvl={lvl} side="ask" maxTotal={maxTotal} />
         ))}
-      <div className="midrow">
+      <div className={`midrow ${dir}`}>
         <span className="lbl">Spread</span>
         <span className="num spreadabs">{fmt(snap.spread)}</span>
         <span className="num spreadpct">{spreadPct.toFixed(3)}%</span>
+        <span className="midpx">
+          {fmt(snap.mid)}
+          <span className="arrow">{dir === 'up' ? ' ▲' : dir === 'down' ? ' ▼' : ''}</span>
+        </span>
       </div>
       {/* bids: best (tightest) just below the spread row, worst at bottom */}
       {bidRows.map((lvl, i) => (
