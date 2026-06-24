@@ -63,15 +63,15 @@ export default function App() {
         <span className="meta">seed {seed}</span>
         <span className="meta">venue {venue.id}</span>
         <span className="meta">t {view ? view.t : '0.0'}s</span>
+        <span className={`mid ${view ? view.dir : ''}`}>
+          {view ? fmt(view.snap.mid) : '—'}
+          <span className="arrow">{view && view.dir === 'up' ? ' ▲' : view && view.dir === 'down' ? ' ▼' : ''}</span>
+        </span>
         <button className="ctl" onClick={toggle}>
           {running ? '⏸ pause' : '▶ run'}
         </button>
       </header>
-      {view ? (
-        <Ladder snap={view.snap} dir={view.dir} venue={venue} />
-      ) : (
-        <div className="loading">booting…</div>
-      )}
+      {view ? <Ladder snap={view.snap} /> : <div className="loading">booting…</div>}
       <footer className="bar foot">
         <span className="meta">tick {DT * 1000}ms</span>
         <span className="meta">repaint {BOOK_RENDER_MS}ms</span>
@@ -81,39 +81,64 @@ export default function App() {
   )
 }
 
-function Ladder({ snap, dir, venue }) {
-  const asks = snap.asks.slice(0, LADDER_DEPTH)
-  const bids = snap.bids.slice(0, LADDER_DEPTH)
-  const maxSize = Math.max(...asks.map((l) => l.size), ...bids.map((l) => l.size), 1e-9)
+const fmt = (x, d = 2) =>
+  x.toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d })
+
+// Accumulate size outward from the inside (best price) so each row's Total is
+// the cumulative depth up to and including that level — Hyperliquid style.
+function withCumulative(levels) {
+  let cum = 0
+  return levels.map((l) => {
+    cum += l.size
+    return { ...l, total: cum }
+  })
+}
+
+function Ladder({ snap }) {
+  const askRows = withCumulative(snap.asks.slice(0, LADDER_DEPTH)) // best → worst
+  const bidRows = withCumulative(snap.bids.slice(0, LADDER_DEPTH)) // best → worst
+  const maxTotal = Math.max(
+    askRows.length ? askRows[askRows.length - 1].total : 0,
+    bidRows.length ? bidRows[bidRows.length - 1].total : 0,
+    1e-9,
+  )
+  const spreadPct = (snap.spread / snap.mid) * 100
 
   return (
     <div className="book">
-      {asks
+      <div className="cols">
+        <span>Price</span>
+        <span className="num">Size</span>
+        <span className="num">Total</span>
+      </div>
+      {/* asks: worst at top, best (tightest) just above the spread row */}
+      {askRows
         .slice()
         .reverse()
         .map((lvl, i) => (
-          <Row key={`a${i}`} lvl={lvl} side="ask" maxSize={maxSize} />
+          <Row key={`a${i}`} lvl={lvl} side="ask" maxTotal={maxTotal} />
         ))}
-      <div className={`midrow ${dir}`}>
-        <span className="midpx">{snap.mid.toFixed(2)}</span>
-        <span className="spread">spread {snap.spread.toFixed(2)}</span>
-        <span className="arrow">{dir === 'up' ? '▲' : dir === 'down' ? '▼' : '■'}</span>
-        <span className="vid">{venue.id}</span>
+      <div className="midrow">
+        <span className="lbl">Spread</span>
+        <span className="num spreadabs">{fmt(snap.spread)}</span>
+        <span className="num spreadpct">{spreadPct.toFixed(3)}%</span>
       </div>
-      {bids.map((lvl, i) => (
-        <Row key={`b${i}`} lvl={lvl} side="bid" maxSize={maxSize} />
+      {/* bids: best (tightest) just below the spread row, worst at bottom */}
+      {bidRows.map((lvl, i) => (
+        <Row key={`b${i}`} lvl={lvl} side="bid" maxTotal={maxTotal} />
       ))}
     </div>
   )
 }
 
-function Row({ lvl, side, maxSize }) {
-  const pct = Math.max(2, (lvl.size / maxSize) * 100)
+function Row({ lvl, side, maxTotal }) {
+  const pct = Math.max(1.5, (lvl.total / maxTotal) * 100)
   return (
     <div className={`row ${side}`}>
       <span className="depthbar" style={{ width: `${pct}%` }} />
-      <span className="px">{lvl.price.toFixed(2)}</span>
-      <span className="sz">{lvl.size.toFixed(2)}</span>
+      <span className="px">{fmt(lvl.price)}</span>
+      <span className="num sz">{fmt(lvl.size)}</span>
+      <span className="num tot">{fmt(lvl.total)}</span>
     </div>
   )
 }
