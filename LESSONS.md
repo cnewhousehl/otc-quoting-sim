@@ -6,6 +6,18 @@ mechanism behind each, and where it's surfaced. ✅ = implemented & tested,
 what/why for instructors.
 
 ## Quoting & staleness
+- ✅ **Price to the hedge, in real time.** A counterparty's willingness is anchored
+  to what it costs YOU to hedge their clip on the *live* book (size vs venue
+  liquidity), not a fixed number. Sharp/sophisticated names trade near the
+  hedgeable price + a small spread and **almost never let you fill them wide**
+  unless their clip is huge vs the book; retail is far more flexible. Because the
+  "winning" width tracks the moving book, it's not memorizable — you must read it.
+  *(fill.js hedge-cost-anchored model; `estimateHedgeWidth`)*
+- ✅ **Relationship / franchise value.** Give a client a run of tight, fair fills
+  and they build **favor** — they'll then accept the occasional wider one-off. But
+  a wide one-off **burns** favor, so they turn demanding again until you rebuild
+  trust. Stronger for mid/sophisticated (relationship-driven) names. *(session
+  favor state; revealed on Easy)*
 - ✅ **Don't leave stale quotes live.** A quote is executable from submit until you
   cancel/refresh/expire; clients pick off quotes the market has moved through.
   *(quote.js/fill.js; M6 staleness tests)*

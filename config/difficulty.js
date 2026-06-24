@@ -20,8 +20,14 @@ const AUX = {
   tauReact: 2.0, // decision-latency time constant (s)
 }
 
-function level({ pTox, softLambda, s0, omega, q0, aPick, bSharp, theta, pickoffScale, deltaTox, N, eta, hazardScale, arrivalRate, maxPendingRFQs, transparency, reservationBps, bookUpdateSec }) {
+function level({ pTox, softLambda, s0, omega, q0, aPick, bSharp, theta, pickoffScale, deltaTox, N, eta, hazardScale, arrivalRate, maxPendingRFQs, transparency, reservationBps, bookUpdateSec, fillShapes, biasGainBps, favorDecay }) {
   return {
+    // Hedge-cost-anchored fill model (per archetype): reservation = hedgeCost +
+    // bufferBps; slopeBps sets cutoff sharpness; floor is the residual fill rate
+    // for very wide quotes; relStrength = how much relationship/favor widens it.
+    fillShapes,
+    biasGainBps, // per-σ-of-bias shift of the per-side reservation (bps)
+    favorDecay, // per-tick pull of relationship favor back to neutral
     // Soft-fill width scale (bps of mid): a fair clip fills well out to ~this
     // width, and (with size/bias) you can still win flow quoting ~1%.
     reservationBps,
@@ -48,21 +54,36 @@ export const DIFFICULTY = {
     q0: 0.02, aPick: 0.6, bSharp: 0.6, theta: 0.3, pickoffScale: 0.6,
     deltaTox: 0.8, N: 16, eta: 0.3,
     hazardScale: 0.075, arrivalRate: 0.5, maxPendingRFQs: 3, transparency: 'full',
-    reservationBps: 90, bookUpdateSec: 5,
+    reservationBps: 90, bookUpdateSec: 5, biasGainBps: 45, favorDecay: 0.004,
+    fillShapes: {
+      sharp: { bufferBps: 14, slopeBps: 16, floor: 0.04, lambda: 0.5, relStrength: 1.2 },
+      mid: { bufferBps: 40, slopeBps: 46, floor: 0.08, lambda: 0.42, relStrength: 1.6 },
+      soft: { bufferBps: 85, slopeBps: 95, floor: 0.16, lambda: 0.4, relStrength: 0.3 },
+    },
   }),
   medium: level({
     pTox: 0.35, softLambda: 0.32, s0: 0.05, omega: 0.0,
     q0: 0.02, aPick: 1.4, bSharp: 0.45, theta: 0.1, pickoffScale: 1.0,
     deltaTox: 1.6, N: 24, eta: 0.2,
     hazardScale: 0.075, arrivalRate: 0.8, maxPendingRFQs: 5, transparency: 'archetype',
-    reservationBps: 60, bookUpdateSec: 2.5,
+    reservationBps: 60, bookUpdateSec: 2.5, biasGainBps: 30, favorDecay: 0.004,
+    fillShapes: {
+      sharp: { bufferBps: 8, slopeBps: 10, floor: 0.03, lambda: 0.5, relStrength: 1.2 },
+      mid: { bufferBps: 24, slopeBps: 30, floor: 0.06, lambda: 0.4, relStrength: 1.7 },
+      soft: { bufferBps: 58, slopeBps: 68, floor: 0.12, lambda: 0.38, relStrength: 0.3 },
+    },
   }),
   hard: level({
     pTox: 0.6, softLambda: 0.28, s0: 0.04, omega: 0.0,
     q0: 0.03, aPick: 2.6, bSharp: 0.35, theta: 0.0, pickoffScale: 1.0,
     deltaTox: 2.6, N: 32, eta: 0.12,
     hazardScale: 0.075, arrivalRate: 1.2, maxPendingRFQs: 8, transparency: 'hidden',
-    reservationBps: 38, bookUpdateSec: 1,
+    reservationBps: 38, bookUpdateSec: 1, biasGainBps: 20, favorDecay: 0.004,
+    fillShapes: {
+      sharp: { bufferBps: 4, slopeBps: 6, floor: 0.02, lambda: 0.55, relStrength: 1.2 },
+      mid: { bufferBps: 15, slopeBps: 19, floor: 0.05, lambda: 0.36, relStrength: 1.7 },
+      soft: { bufferBps: 38, slopeBps: 46, floor: 0.09, lambda: 0.34, relStrength: 0.3 },
+    },
   }),
 }
 

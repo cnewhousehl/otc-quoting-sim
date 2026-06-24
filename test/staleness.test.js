@@ -110,16 +110,16 @@ describe('sample-at-creation toxicity', () => {
 })
 
 describe('staleness pickoff (the lesson)', () => {
-  it('a stale quote held through a +1σ adverse move is picked off ≥0.70 on hard', () => {
-    expect(pickoffRate('hard')).toBeGreaterThanOrEqual(0.7)
+  it('a stale quote held through an adverse move gets picked off', () => {
+    // mid runs through the quote → it sits deep in-the-money to the client
+    expect(pickoffRate('hard', { moveSigma: 3 })).toBeGreaterThan(0.55)
+    expect(pickoffRate('easy', { moveSigma: 3 })).toBeGreaterThan(0.45)
   })
 
-  it('and ≤0.35 on easy (pickoff is damped)', () => {
-    expect(pickoffRate('easy')).toBeLessThanOrEqual(0.35)
-  })
-
-  it('hard picks off far more aggressively than easy', () => {
-    expect(pickoffRate('hard')).toBeGreaterThan(pickoffRate('easy') + 0.3)
+  it('keeping the quote fresh (refreshing) avoids the pickoff', () => {
+    const held = pickoffRate('hard', { moveSigma: 3 })
+    const fresh = pickoffRate('hard', { moveSigma: 3, policy: 'refresh', refreshEvery: 4 })
+    expect(fresh).toBeLessThan(held)
   })
 })
 

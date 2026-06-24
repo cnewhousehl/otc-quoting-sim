@@ -1,104 +1,79 @@
 // engine/fill.js
 //
-// Continuous per-tick execution hazard (PLAN.md §1.2, Q2, M5).
+// Hedge-cost-anchored execution model (PLAN.md §1.2, Q2; redesigned).
 //
-// Each tick, for every live quote, the issuing client may execute against the
-// still-live price. The per-side hazard intensity is
+// The probability a client trades your quote is anchored to what it costs YOU to
+// hedge their size on the live book — not a static width. A client's reservation
+// (the spread over fair they'll accept) is:
 //
-//   h_side = λ_C · g_arch(e_side) · L(X) · R_dur(τ) · D_diff
+//   reservation = hedgeCost + archetype_buffer  (± bias shift per side)
 //
-// with per-tick fill probability 1 − exp(−h·dt). Edges are normalized by σ_M so
-// they're dimensionless:
-//   e_ask = (M_t − studentAsk)/σ_M   (client lifts/buys at the ask)
-//   e_bid = (studentBid − M_t)/σ_M   (client hits/sells at the bid)
-// e > 0 means the quote has gone stale in-the-money to the client (pickoff zone).
+//   - Sharp (Citadel-like): tiny buffer + STEEP cutoff → they only trade near the
+//     hedgeable price + a small spread; they almost never let you fill them wide
+//     unless their clip is huge vs the book (hedgeCost itself is large).
+//   - Mid: moderate buffer, gentler slope (pays less attention to exact liquidity).
+//   - Soft/retail: large buffer, gradual slope (trades wide).
 //
-// Bid-fill and ask-fill are independent competing risks on the same quote; the
-// first to fire consumes it, and a same-tick tie goes to the larger edge
-// (deterministic, no extra draw). The soft archetype lives here; the sharp
-// (softplus pickoff) archetype is added in M6.
-//
-// This module is pure math — all coefficients come in via `client`/`diff`, so
-// difficulty (M9) and calibration (M10) tune behavior without touching it.
+// Because the reservation tracks the LIVE hedge cost (which moves as books widen,
+// deplete, and react to flow), the "right" quote width is not memorizable — the
+// student must read the book. A stale quote (w<0, in the client's favor) sits
+// deep inside reservation, so g→1 and it gets picked off. Bias shifts the per-side
+// reservation (bullish → accepts a wider ask). Staleness severity for P&L still
+// uses σ_M.
 
 import { STREAMS } from './rng.js'
 
 const logistic = (x) => 1 / (1 + Math.exp(-x))
-const softplus = (x) => (x > 30 ? x : Math.log1p(Math.exp(x))) // overflow-safe
-const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x))
 
-// Soft (uninformed) archetype: large floor s0 ⇒ still trades when e<0 (the
-// spread-capture engine), roughly flat in e.
-//   g_soft(e) = s0 + s1·logistic((e + ω_soft)/b_soft)
-export function softG(e, { s0, s1, omega, b }) {
-  return s0 + s1 * logistic((e + omega) / b)
+// Willingness in [floor, 1]: 1 when your spread w is well inside reservation
+// (or stale), decaying to floor as w exceeds it. `slope` sets the cutoff sharpness.
+export function fillG({ w, reservation, slope, floor }) {
+  return floor + (1 - floor) * logistic((reservation - w) / slope)
 }
 
-// Sharp (informed) archetype: tiny baseline q0, hazard spikes once the quote
-// goes stale-in-the-money. Used from M6 onward.
-//   g_sharp(e) = q0 + A_pick·softplus((e − θ_sharp)/b_sharp)
-export function sharpG(e, { q0, aPick, theta, b }) {
-  return q0 + aPick * softplus((e - theta) / b)
-}
-
-export function archetypeG(e, client) {
-  if (client.archetype === 'sharp') return sharpG(e, client.sharp)
-  return softG(e, client.soft)
-}
-
-// Per-side hazard intensity (per second).
-export function fillHazard({ e, ageSec, size, client, diff }) {
-  const g = archetypeG(e, client)
-  const L = clamp(
-    Math.pow(size / client.xRef, -client.eta),
-    client.Lmin ?? 0.25,
-    client.Lmax ?? 4,
-  )
-  const Rdur = 1 - Math.exp(-ageSec / client.tauReact) // decision latency ramp
-  const Ddiff = diff?.dDiff ?? 1
-  return client.lambda * g * L * Rdur * Ddiff
-}
-
-// Evaluate one live quote against the current mid at tick n. Returns a fill
-// descriptor or null (no fill this tick).
-//   { side, clientBuys, price, edge }
-// side 'ask' → client buys at the ask (student sells); 'bid' → client sells.
+// Evaluate one live quote against the current mid at tick n.
+//   client.fill   = { bufferBps, slopeBps, floor }  (archetype shape)
+//   client.hedgeWidth = cost (price) to hedge the clip on the cheapest venue
+//   client.lambda, client.bias, client.biasGainBps, client.tauReact
 export function evaluateQuoteFill({ quote, mid, sigmaM, n, dt, rng, client, diff }) {
   const ageSec = (n - quote.createdTick) * dt
   if (ageSec <= 0) return null // decision latency: no fill on the creation tick
 
-  // Staleness edge (σ_M units) drives sharp pickoff + fill severity. Willingness
-  // for SOFT/retail flow is measured against a reservation SPREAD R (bps-scale,
-  // widened by size/urgency) so realistic widths — even ~1% — can win flow. R
-  // falls back to σ_M when unset (keeps the unit fill tests unchanged).
-  const eStaleAsk = (mid - quote.ask) / sigmaM
-  const eStaleBid = (quote.bid - mid) / sigmaM
-  const R = client.reservation ?? sigmaM
-  const eWillAsk = client.archetype === 'sharp' ? eStaleAsk : (mid - quote.ask) / R
-  const eWillBid = client.archetype === 'sharp' ? eStaleBid : (quote.bid - mid) / R
+  const f = client.fill
+  // Relationship favor widens (or narrows) the buffer: a well-treated client
+  // accepts a wider quote; a wary one demands tighter.
+  const buffer = mid * (f.bufferBps / 1e4) * (1 + (client.favorBonus ?? 0))
+  const slope = mid * (f.slopeBps / 1e4)
+  const hedge = client.hedgeWidth ?? buffer
+  const biasShift = mid * ((client.biasGainBps ?? 0) / 1e4) * (client.bias ?? 0)
+  const resAsk = hedge + buffer + biasShift // bullish → tolerates a wider ask (lift)
+  const resBid = hedge + buffer - biasShift // bearish → tolerates a wider bid (hit)
 
-  // Directional bias: a bullish client (bias>0) is keener to LIFT (buy the ask)
-  // even when it's wide, and less keen to hit; bearish is the mirror.
-  const bias = client.bias ?? 0
-  const biasBeta = 0.9
-  const hAsk = fillHazard({ e: eWillAsk, ageSec, size: quote.size, client, diff }) * Math.exp(biasBeta * bias)
-  const hBid = fillHazard({ e: eWillBid, ageSec, size: quote.size, client, diff }) * Math.exp(-biasBeta * bias)
-  const pAsk = 1 - Math.exp(-hAsk * dt)
-  const pBid = 1 - Math.exp(-hBid * dt)
+  const wAsk = quote.ask - mid // your ask half-spread over fair (neg = stale ITM)
+  const wBid = mid - quote.bid
+
+  const Rdur = 1 - Math.exp(-ageSec / (client.tauReact ?? 2)) // decision-latency ramp
+  const dDiff = diff?.dDiff ?? 1
+  // Bias also tilts which side fires first (a bullish client lifts; bearish hits).
+  const bf = Math.exp(0.7 * (client.bias ?? 0))
+  const gAsk = fillG({ w: wAsk, reservation: resAsk, slope, floor: f.floor })
+  const gBid = fillG({ w: wBid, reservation: resBid, slope, floor: f.floor })
+  const pAsk = 1 - Math.exp(-client.lambda * gAsk * bf * Rdur * dDiff * dt)
+  const pBid = 1 - Math.exp((-client.lambda * gBid * Rdur * dDiff * dt) / bf)
 
   const uAsk = rng.uniform(STREAMS.execHazard, n, quote.id, 0)
   const uBid = rng.uniform(STREAMS.execHazard, n, quote.id, 1)
   const askFires = uAsk < pAsk
   const bidFires = uBid < pBid
-
   if (!askFires && !bidFires) return null
 
+  // staleness edge (σ_M) — drives fill severity / adverse-selection attribution
+  const eStaleAsk = (mid - quote.ask) / sigmaM
+  const eStaleBid = (quote.bid - mid) / sigmaM
   let side
   if (askFires && bidFires) side = eStaleAsk >= eStaleBid ? 'ask' : 'bid'
   else side = askFires ? 'ask' : 'bid'
 
-  if (side === 'ask') {
-    return { side: 'ask', clientBuys: true, price: quote.ask, edge: eStaleAsk }
-  }
+  if (side === 'ask') return { side: 'ask', clientBuys: true, price: quote.ask, edge: eStaleAsk }
   return { side: 'bid', clientBuys: false, price: quote.bid, edge: eStaleBid }
 }

@@ -109,6 +109,9 @@ body {
 .bias.bullish { color: var(--bid); border-color: var(--bid); }
 .bias.bearish { color: var(--ask); border-color: var(--ask); }
 .bias.neutral { color: var(--dim); border-color: var(--grid); }
+.favor { margin-left: 6px; font-size: 9px; text-transform: uppercase; padding: 1px 5px; border-radius: 3px; border: 1px solid; }
+.favor.favored { color: var(--accent); border-color: var(--accent); }
+.favor.wary { color: var(--ask); border-color: var(--ask); }
 
 /* positions / pnl / trades */
 .posrow { display: flex; justify-content: space-between; padding: 3px 0; font-variant-numeric: tabular-nums; font-size: 13px; }

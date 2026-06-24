@@ -3,27 +3,30 @@ import { describe, it, expect } from 'vitest'
 import { createRng } from '../engine/rng.js'
 import { createQuoteBook } from '../engine/quote.js'
 import { evaluateQuoteFill } from '../engine/fill.js'
+import { resolveClient } from '../engine/client.js'
+import { getDifficulty } from '../config/difficulty.js'
 import { runFromSeed } from '../engine/session.js'
 
 const DT = 0.25
 const MID = 65000
-const SIGMA_M = 30
+const SIGMA_M = MID * 0.00005
 
-const SOFT = { archetype: 'soft', lambda: 0.03, eta: 0.3, xRef: 5, tauReact: 2, soft: { s0: 0.5, s1: 3.0, omega: 1.0, b: 0.8 } }
-
-// fraction of fills that hit the ASK (client lifts/buys) for a given bias, at a
-// symmetric width
-function liftRate(bias, { N = 3000, widthSigma = 1, seed = 7 } = {}) {
+// Fraction of fills that hit the ASK (client lifts/buys) for a given bias, at a
+// moderately-wide symmetric width (so the bias-driven side asymmetry shows).
+function liftRate(bias, { N = 3000, bps = 40, seed = 7 } = {}) {
+  const d = getDifficulty('medium')
+  const client = resolveClient({ id: 'c', archetype: 'soft' }, d)
+  client.hedgeWidth = MID * 0.0015
+  client.bias = bias
   const rng = createRng(seed)
-  const qb = createQuoteBook({ ttlTicks: 120 })
-  const client = { ...SOFT, bias }
+  const qb = createQuoteBook({ ttlTicks: 180 })
   let lifts = 0
   let fills = 0
   for (let i = 0; i < N; i++) {
-    const w = widthSigma * SIGMA_M
+    const w = (MID * bps) / 1e4
     const q = qb.submit({ rfqId: `r${i}`, assetId: 'BTC', clientId: 'c', archetype: 'soft', bid: MID - w, ask: MID + w, size: 5, tick: 0 })
-    for (let n = 1; n <= 120; n++) {
-      const res = evaluateQuoteFill({ quote: q, mid: MID, sigmaM: SIGMA_M, n, dt: DT, rng, client, diff: { dDiff: 1 } })
+    for (let n = 1; n <= 180; n++) {
+      const res = evaluateQuoteFill({ quote: q, mid: MID, sigmaM: SIGMA_M, n, dt: DT, rng, client, diff: { dDiff: d.hazardScale } })
       if (res) {
         fills++
         if (res.side === 'ask') lifts++

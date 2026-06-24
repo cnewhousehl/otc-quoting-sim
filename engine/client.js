@@ -16,17 +16,16 @@ import { STREAMS } from './rng.js'
 // (softplus pickoff); soft and mid both trade on the soft curve (mid is just a
 // soft client with a higher toxic share — see sampleToxic).
 export function resolveClient(entry, difficulty) {
-  const eta = difficulty.eta
-  const xRef = entry.size?.medianX ?? difficulty.xRef
-  const tauReact = difficulty.tauReact
-  if (entry.archetype === 'sharp') {
-    // The §1.3 stale-pickoff-aggression dial scales the pickoff gain (damped on
-    // easy so a stale quote is less reliably picked off).
-    const scale = difficulty.sharp.pickoffScale ?? 1
-    const sharp = { ...difficulty.sharp, aPick: difficulty.sharp.aPick * scale }
-    return { id: entry.id, archetype: 'sharp', lambda: difficulty.sharp.lambda, eta, xRef, tauReact, sharp }
+  const shape = (difficulty.fillShapes && difficulty.fillShapes[entry.archetype]) || difficulty.fillShapes.soft
+  return {
+    id: entry.id,
+    archetype: entry.archetype,
+    lambda: shape.lambda,
+    tauReact: difficulty.tauReact,
+    fill: { bufferBps: shape.bufferBps, slopeBps: shape.slopeBps, floor: shape.floor },
+    relStrength: shape.relStrength ?? 0,
+    biasGainBps: difficulty.biasGainBps ?? 30,
   }
-  return { id: entry.id, archetype: 'soft', lambda: difficulty.soft.lambda, eta, xRef, tauReact, soft: { ...difficulty.soft } }
 }
 
 // isToxic ~ p_tox at RFQ creation. Soft ≈ never toxic; sharp full p_tox; mid half.

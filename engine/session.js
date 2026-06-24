@@ -79,6 +79,8 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
   const quoteByRfq = new Map() // rfqId -> quoteId
   const restingLimits = [] // passive hedge limit orders awaiting the market
   let limitSeq = 0
+  const favor = new Map() // clientId -> relationship favor in [0,1] (0.5 = neutral)
+  const getFavor = (id) => favor.get(id) ?? 0.5
 
   function emit(rec) {
     const full = { tick: n, ...rec }
@@ -175,8 +177,9 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
       }
     }
 
-    // sentiment fades each tick
+    // sentiment fades each tick; relationship favor pulls back toward neutral
     for (const id of assetIds) sentiment[id] *= SENT_DECAY
+    for (const [k, v] of favor) favor.set(k, v + (0.5 - v) * (diff.favorDecay ?? 0.004))
 
     // (5a) news catalyst — pivots the true mid and shifts sentiment
     const newsEv = news.step(n)
@@ -192,6 +195,10 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
     const rfq = rfqGen.step(n, pending.size)
     if (rfq) {
       assignBias(rfq)
+      const fv = getFavor(rfq.clientId)
+      rfq.favor = fv
+      rfq.favorLabel = fv > 0.65 ? 'favored' : fv < 0.35 ? 'wary' : 'neutral'
+      rfq.favorShown = diff.transparency === 'full' // revealed on Easy
       rfqs.set(rfq.id, rfq)
       pending.set(rfq.id, rfq)
       events.push(emit({ type: 'rfq_new', rfqId: rfq.id, clientId: rfq.clientId, handle: rfq.handle, archetype: rfq.archetype, isToxic: rfq.isToxic, assetId: rfq.assetId, sizeX: rfq.size, bias: rfq.biasShown ? rfq.biasLabel : null }))
@@ -217,10 +224,16 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
       const client = resolveClient(entry, diff)
       client.bias = rfqObj?.bias ?? 0 // directional willingness to cross
       const mid = price.mid(q.assetId)
-      // Size-vs-liquidity urgency: a clip large relative to hedge liquidity makes
-      // the client tolerate a wider quote (they know it's illiquid to hedge).
-      const urg = Math.min(2, 0.7 * Math.log(1 + (q.size * mid) / Math.max(1, assetLiquidityNotional(q.assetId))))
-      client.reservation = mid * (diff.reservationBps / 1e4) * (1 + urg)
+      // Reservation is anchored to the LIVE cost to hedge this clip (size vs
+      // venue liquidity), so the winning width tracks the book, not a memorizable
+      // constant. Cached per quote and refreshed every few ticks (books only
+      // move on their cadence anyway). Relationship favor widens the buffer.
+      if (q._hwTick == null || n - q._hwTick >= 4) {
+        q._hwBps = estimateHedgeWidth(q.assetId, q.size)?.bps ?? 0
+        q._hwTick = n
+      }
+      client.hedgeWidth = mid * (q._hwBps / 1e4)
+      client.favorBonus = client.relStrength * (getFavor(q.clientId) - 0.5)
       const sigmaM = price.sigmaM(q.assetId)
       const res = evaluateQuoteFill({ quote: q, mid, sigmaM, n, dt, rng, client, diff: diffHaz })
       if (!res) continue
@@ -228,6 +241,17 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
       const fee = 0 // student is the maker on client fills
       pnl.onClientFill({ assetId: q.assetId, clientBuys: res.clientBuys, size: q.size, price: res.price, fee, meta: { quoteId: q.id, clientId: q.clientId } })
       quotes.markFilled(q.id, res, n)
+
+      // Relationship: a tight fill (good price for them) builds favor; taking a
+      // wide one-off burns it — so high-favor clients accept the occasional wide
+      // quote, then turn demanding again until you rebuild trust.
+      const wFill = res.side === 'ask' ? q.ask - mid : mid - q.bid
+      const buf = mid * (client.fill.bufferBps / 1e4) * (1 + (client.favorBonus ?? 0))
+      const resWidth = client.hedgeWidth + buf
+      let fv = getFavor(q.clientId)
+      if (wFill <= client.hedgeWidth * 1.3) fv += 0.06 // tight → builds favor
+      else if (wFill > resWidth * 0.75) fv -= 0.25 // wide one-off → burns favor
+      favor.set(q.clientId, Math.max(0, Math.min(1, fv)))
 
       // toxic drift activates on fill (Q3); for informed flow the drift follows
       // the client's BIAS (their view), so you can pre-position against it.

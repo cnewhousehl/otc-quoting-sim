@@ -109,6 +109,7 @@ function RfqCard({ rfq, sim, denom }) {
         <span className="who">
           {rfq.handle}
           {rfq.biasShown && <span className={`bias ${rfq.biasLabel}`}>{rfq.biasLabel}</span>}
+          {rfq.favorShown && rfq.favorLabel !== 'neutral' && <span className={`favor ${rfq.favorLabel}`}>{rfq.favorLabel === 'favored' ? '★ favored' : 'wary'}</span>}
         </span>
         <span className="amt">{usd(rfq.notional)}</span>
       </div>
