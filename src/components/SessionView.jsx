@@ -262,37 +262,48 @@ function AssetBook({ sim, asset, denom }) {
   const dir = sim.dirs[asset]
   const mid = sim.getBook(venues[0])?.mid ?? 0
   const pos = sim.state.positions[asset] ?? 0
+  const hasPos = Math.abs(pos) > 1e-9
   return (
     <div className="abook">
       <div className="abook-h">
         <span className={`aname ${dir || ''}`}>{asset} {px(mid)} {dir === 'up' ? '▲' : dir === 'down' ? '▼' : ''}</span>
-        {Math.abs(pos) > 1e-9 && (
+        {hasPos && (
           <span className={`apos ${pos > 0 ? 'long' : 'short'}`}>
-            {pos > 0 ? '+' : '−'}{fmt(Math.abs(pos), 2)}
-            <button className="flatmini" onClick={() => sim.hedge({ assetId: asset, venueId: venues[0], side: pos > 0 ? 'sell' : 'buy', size: Math.abs(pos) })}>flat</button>
+            {pos > 0 ? '+' : '−'}{fmt(Math.abs(pos), 2)} ({usdCompact(Math.abs(pos * mid))})
           </span>
         )}
       </div>
       <div className="ladders">
-        {venues.map((vid) => <VenueLadder key={vid} sim={sim} asset={asset} vid={vid} denom={denom} />)}
+        {venues.map((vid) => <VenueLadder key={vid} sim={sim} asset={asset} vid={vid} denom={denom} pos={pos} />)}
       </div>
     </div>
   )
 }
 
-function VenueLadder({ sim, asset, vid, denom }) {
+function VenueLadder({ sim, asset, vid, denom, pos }) {
   const [size, setSize] = useState(0.5)
   const mid = sim.getBook(vid)?.mid ?? 0
   const sizeCoin = denom === 'usd' ? size / (mid || 1) : size
+  const easy = sim.session.current.difficulty === 'easy'
+  const hasPos = Math.abs(pos) > 1e-9
+  const flatSide = pos > 0 ? 'sell' : 'buy'
   return (
     <div className="lwrap">
       <div className="ltier">{sim.venueInfo(vid).tier}</div>
-      <Ladder snap={sim.getBook(vid)} dir={sim.dirs[asset]} denom={denom} compact depth={10} showBps={sim.session.current.difficulty === 'easy'} />
+      <Ladder snap={sim.getBook(vid)} dir={sim.dirs[asset]} denom={denom} compact depth={10} showBps={easy} />
       <div className="vhedge">
-        <input type="number" step="0.1" value={size} onChange={(e) => setSize(+e.target.value)} />
+        <input type="number" step="0.1" value={size} onChange={(e) => setSize(+e.target.value)} title={denom === 'usd' ? 'size in $' : 'size in coin'} />
         <button className="buy" onClick={() => sim.hedge({ assetId: asset, venueId: vid, side: 'buy', size: Math.abs(sizeCoin) })}>buy</button>
         <button className="sell" onClick={() => sim.hedge({ assetId: asset, venueId: vid, side: 'sell', size: Math.abs(sizeCoin) })}>sell</button>
       </div>
+      {easy && hasPos && (
+        <div className="pcthedge">
+          <span className="lbl">{flatSide}</span>
+          {[0.05, 0.25, 0.5, 1].map((p) => (
+            <button key={p} onClick={() => sim.hedge({ assetId: asset, venueId: vid, side: flatSide, size: Math.abs(pos) * p })}>{p * 100}%</button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
