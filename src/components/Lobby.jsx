@@ -20,6 +20,7 @@ export default function Lobby({ tier = 'free', onStart }) {
   const [newsMin, setNewsMin] = useState(3)
   const [seedMode, setSeedMode] = useState('random')
   const [seed, setSeed] = useState(12345)
+  const [showHelp, setShowHelp] = useState(false)
 
   const scenarios = Object.keys(SCENARIOS).filter((s) => can(t, 'scenario', s) || s === 'calm')
 
@@ -57,7 +58,15 @@ export default function Lobby({ tier = 'free', onStart }) {
                 </button>
               )
             })}
+            <button className="help-btn" onClick={() => setShowHelp((v) => !v)} title="what each difficulty changes">?</button>
           </div>
+          {showHelp && (
+            <div className="help-panel">
+              <div><b>Easy</b> — client archetype, directional bias & relationship favor are <b>shown</b>; calm/slow books (~5s updates), low toxic share, damped pickoff, generous fill widths.</div>
+              <div><b>Medium</b> — bias/archetype only <b>hinted</b>; ~2.5s books, moderate toxic share, tighter fill widths.</div>
+              <div><b>Hard</b> — names/bias <b>masked</b> (infer toxicity from size/asset/flow); ~1s books, high toxic share, full pickoff, and <b>clustered toxic flow</b> (a name turns toxic for minutes after a sharp lift — winner's curse becomes a regime).</div>
+            </div>
+          )}
         </Field>
 
         <Field label="Order-book engine">

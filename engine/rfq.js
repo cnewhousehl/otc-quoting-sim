@@ -12,7 +12,7 @@
 
 import { STREAMS } from './rng.js'
 
-export function createRfqGenerator({ rng, dt, difficulty, universe, roster, liquidityNotional, sizeFrac = 0.08, sigmaLN = 0.8 }) {
+export function createRfqGenerator({ rng, dt, difficulty, universe, roster, liquidityNotional, favorFn = null, pToxFor = null, sizeFrac = 0.08, sigmaLN = 0.8 }) {
   let seq = 0
   const sharp = roster.filter((c) => c.archetype === 'sharp')
   const mids = roster.filter((c) => c.archetype === 'mid')
@@ -28,15 +28,28 @@ export function createRfqGenerator({ rng, dt, difficulty, universe, roster, liqu
     return universe[universe.length - 1]
   }
 
-  const pickFrom = (arr, u) => arr[Math.min(arr.length - 1, Math.floor(u * arr.length))]
+  // Favor scales how often a client comes back: a well-treated client appears
+  // more (weight 0.3..1.3 around the 0.5 neutral favor). Courting a toxic name's
+  // favor is self-punishing — it brings back more −EV flow.
+  function pickFrom(arr, u) {
+    if (!favorFn || arr.length <= 1) return arr[Math.min(arr.length - 1, Math.floor(u * arr.length))]
+    const w = arr.map((c) => 0.3 + (favorFn(c.id) ?? 0.5))
+    const total = w.reduce((a, b) => a + b, 0)
+    let x = u * total
+    for (let i = 0; i < arr.length; i++) {
+      if (x < w[i]) return arr[i]
+      x -= w[i]
+    }
+    return arr[arr.length - 1]
+  }
 
-  // Client + toxicity: sharp (toxic) with prob p_tox; otherwise mostly soft, with
-  // some ambiguous 'mid' that is toxic ~half the time (makes Hard's masked names
-  // genuinely hard to read).
-  function pickClient(n, id) {
+  // Client + toxicity: sharp (toxic) with prob p_tox (asset-specific on Hard via
+  // clustered-toxic bumps); otherwise mostly soft, with some ambiguous 'mid'.
+  function pickClient(n, id, assetId) {
+    const pTox = pToxFor ? pToxFor(assetId) : difficulty.pTox
     const uGroup = rng.uniform(STREAMS.rfqSpec, n, id, 1)
     const uPick = rng.uniform(STREAMS.rfqSpec, n, id, 2)
-    if (sharp.length && uGroup < difficulty.pTox) {
+    if (sharp.length && uGroup < pTox) {
       return { entry: pickFrom(sharp, uPick), isToxic: true }
     }
     const uSplit = rng.uniform(STREAMS.rfqSpec, n, id, 3)
@@ -63,7 +76,7 @@ export function createRfqGenerator({ rng, dt, difficulty, universe, roster, liqu
 
     const id = `rfq${++seq}`
     const asset = weightedAsset(rng.uniform(STREAMS.rfqArrival, n, id, 1))
-    const { entry, isToxic } = pickClient(n, id)
+    const { entry, isToxic } = pickClient(n, id, asset.id)
     const size = sizeFor(asset, n, id)
     return {
       id,

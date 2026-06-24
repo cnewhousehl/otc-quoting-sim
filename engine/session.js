@@ -44,13 +44,27 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
   const pnl = createPnL()
   const quotes = createQuoteBook({ ttlTicks: cfg.ttlTicks })
   const toxicDrift = createToxicDrift()
-  const rfqGen = createRfqGenerator({ rng, dt, difficulty: diff, universe, roster: ROSTER, liquidityNotional: assetLiquidityNotional })
+  const isHard = cfg.difficulty === 'hard'
+  const rfqGen = createRfqGenerator({
+    rng, dt, difficulty: diff, universe, roster: ROSTER, liquidityNotional: assetLiquidityNotional,
+    favorFn: (id) => getFavor(id),
+    pToxFor: (a) => Math.min(0.92, diff.pTox + (isHard ? toxBump.get(a) ?? 0 : 0)),
+  })
   const news = createNewsEngine({ rng, dt, assetIds: price.assetIds(), intervalMin: cfg.newsIntervalMin })
   const recentNews = []
 
   const assetIds = price.assetIds()
   for (const id of assetIds) pnl.setMark(id, price.mid(id))
   book.tick(0)
+
+  // Time-of-day plumbing (effect deferred to a later liquidity-regime feature):
+  // the seed picks a session start hour so the field/label exist now.
+  const hourUTC = Math.abs(Math.trunc(seed)) % 24
+  const sessionClock = {
+    hourUTC,
+    label:
+      hourUTC < 6 ? 'Asia' : hourUTC < 12 ? 'Europe' : hourUTC < 15 ? 'EU/US overlap' : hourUTC < 21 ? 'US' : 'Asia open',
+  }
 
   // Market sentiment per asset: news pushes it, then it fades. Drives client
   // directional bias (willingness to cross the spread / informed conviction).
@@ -81,6 +95,7 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
   let limitSeq = 0
   const favor = new Map() // clientId -> relationship favor in [0,1] (0.5 = neutral)
   const getFavor = (id) => favor.get(id) ?? 0.5
+  const toxBump = new Map() // assetId -> clustered-toxic p_tox bump (Hard, Hawkes-style)
 
   function emit(rec) {
     const full = { tick: n, ...rec }
@@ -124,6 +139,17 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
 
   function closeRfq(rfqId) {
     pending.delete(rfqId)
+  }
+
+  // Decline an RFQ. A small favor decrement — occasional defensive passes (e.g.
+  // un-hedgeable size, or a name you can't classify before a catalyst) are
+  // costless, but habitually passing your book bleeds the franchise.
+  function passRfq(rfqId) {
+    const rfq = pending.get(rfqId)
+    if (!rfq) return
+    pending.delete(rfqId)
+    favor.set(rfq.clientId, Math.max(0, getFavor(rfq.clientId) - 0.04))
+    emit({ type: 'rfq_pass', rfqId, clientId: rfq.clientId })
   }
 
   // Passive/limit hedge: rests until the venue mid reaches it, then fills at the
@@ -179,9 +205,11 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
       }
     }
 
-    // sentiment fades each tick; relationship favor pulls back toward neutral
+    // sentiment fades each tick; relationship favor pulls back toward neutral;
+    // clustered-toxic bumps decay (Hawkes half-life ~ a few minutes)
     for (const id of assetIds) sentiment[id] *= SENT_DECAY
     for (const [k, v] of favor) favor.set(k, v + (0.5 - v) * (diff.favorDecay ?? 0.004))
+    for (const [k, v] of toxBump) toxBump.set(k, v * 0.996)
 
     // (5a) news catalyst — pivots the true mid and shifts sentiment
     const newsEv = news.step(n)
@@ -261,6 +289,11 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
         const path = buildDriftPath(diff.toxic, sigmaM / mid)
         const sign = rfqObj.bias ? Math.sign(rfqObj.bias) : res.clientBuys ? 1 : -1
         toxicDrift.activate({ assetId: q.assetId, path, startTick: n + 1, sign })
+        // Clustered toxic flow (Hard): a sharp lift bumps this name's toxic share
+        // for a few minutes — the winner's curse becomes a regime, not a one-off.
+        if (isHard && q.archetype === 'sharp') {
+          toxBump.set(q.assetId, Math.min(0.35, (toxBump.get(q.assetId) ?? 0) + 0.18))
+        }
       }
       const p = pnl.snapshot()
       events.push(emit({
@@ -317,6 +350,8 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
       news: recentNews.slice(0, 5),
       nextNewsSec: news.ticksToNext(n) * dt,
       newsStress: news.stressAt(n),
+      sessionClock,
+      toxAlerts: [...toxBump.entries()].filter(([, v]) => v > 0.05).map(([a]) => a), // names in a toxic cluster
       sentiment: { ...sentiment },
       restingLimits: restingLimits.slice(),
     }
@@ -324,7 +359,8 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
 
   return {
     // mutation
-    tick, submitQuote, cancelQuote, refreshQuote, hedge, placeLimitHedge, cancelLimitHedge,
+    tick, submitQuote, cancelQuote, refreshQuote, hedge, placeLimitHedge, cancelLimitHedge, passRfq,
+    sessionClock,
     // reads
     getState, getEventLog: () => log.slice(),
     getBookSnapshot: (venueId) => book.getBookSnapshot(venueId),
@@ -365,6 +401,7 @@ function applyAction(s, a) {
     case 'hedge': return s.hedge(a)
     case 'placeLimitHedge': return s.placeLimitHedge(a)
     case 'cancelLimitHedge': return s.cancelLimitHedge(a.limitId)
+    case 'passRfq': return s.passRfq(a.rfqId)
     default: return null
   }
 }

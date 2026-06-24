@@ -131,6 +131,16 @@ body {
 .vhedge .buy { background: var(--bid); color: #06140d; }
 .vhedge .sell { background: var(--ask); color: #1a0a06; }
 .flatmini { margin-left: 6px; background: #0d1116; color: var(--fg); border: 1px solid var(--grid); border-radius: 3px; font-size: 10px; padding: 1px 6px; cursor: pointer; font-family: inherit; }
+.stress.neg { color: var(--ask); }
+.rfq-actions { display: flex; gap: 6px; }
+.rfq-actions .send { flex: 1; }
+.rfq-actions .pass { background: #0d1116; color: var(--dim); border: 1px solid var(--grid); border-radius: 5px; padding: 7px 12px; font-family: inherit; font-size: 12px; cursor: pointer; }
+.rfq-actions .pass:hover { color: var(--ask); border-color: var(--ask); }
+
+/* lobby difficulty help */
+.help-btn { background: #0d1116; color: var(--dim); border: 1px solid var(--grid); border-radius: 50%; width: 18px; height: 18px; font-size: 11px; cursor: pointer; font-family: inherit; }
+.help-panel { margin-top: 8px; background: #0d1116; border: 1px solid var(--grid); border-radius: 6px; padding: 10px; font-size: 11px; color: var(--dim); line-height: 1.6; }
+.help-panel b { color: var(--fg); }
 
 /* positions / pnl / trades */
 .posrow { display: flex; justify-content: space-between; padding: 3px 0; font-variant-numeric: tabular-nums; font-size: 13px; }

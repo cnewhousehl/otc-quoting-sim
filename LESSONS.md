@@ -14,10 +14,24 @@ what/why for instructors.
   "winning" width tracks the moving book, it's not memorizable — you must read it.
   *(fill.js hedge-cost-anchored model; `estimateHedgeWidth`)*
 - ✅ **Relationship / franchise value.** Give a client a run of tight, fair fills
-  and they build **favor** — they'll then accept the occasional wider one-off. But
-  a wide one-off **burns** favor, so they turn demanding again until you rebuild
-  trust. Stronger for mid/sophisticated (relationship-driven) names. *(session
-  favor state; revealed on Easy)*
+  and they build **favor** — they'll then accept the occasional wider one-off, AND
+  **come back more often** (favor scales their arrival rate). A wide one-off
+  **burns** favor; neglect them and they drift away. Because toxic flow is −EV,
+  courting a sharp name's favor is self-punishing (you summon more −EV flow).
+  Stronger for mid/sophisticated names. *(session favor state; revealed on Easy)*
+- ✅ **Knowing when to pass.** Declining is a risk tool (un-hedgeable size, or a
+  name you can't classify before a catalyst), not a crutch — a small favor cost
+  per pass means occasional defensive passes are free, but habitually passing your
+  book bleeds the franchise. *(passRfq)*
+- ✅ **Clustered toxic flow (Hard).** Informed flow arrives in bursts: winning a
+  sharp lift bumps that name's toxic share for minutes, so the winner's curse
+  becomes a regime, not a one-off — back off the name or tighten up. *(Hawkes-style
+  p_tox bump; Hard only; ☣ banner)*
+- 🔶 **Cover / "where it traded"** *(planned)* — on fill/expiry, reveal the
+  competing-dealer level + post-fill drift with a per-ticket reasoning callout.
+  Built as a *realization*, not a rule (per-ticket random draws + display noise),
+  so there's no asset-level threshold to memorize — the only winning
+  generalization is the real skill (classify the client, price the toxicity).
 - ✅ **Don't leave stale quotes live.** A quote is executable from submit until you
   cancel/refresh/expire; clients pick off quotes the market has moved through.
   *(quote.js/fill.js; M6 staleness tests)*
@@ -82,6 +96,20 @@ what/why for instructors.
   books + a stale T2 mean no single mid is "the" price.
 - ➕ **Markout discipline** — judge a fill by where the mid is 5/30s later.
 - ➕ **Risk-adjusted, not raw P&L** — Sortino-style scoring rewards a steady book.
+
+## Execution discipline (additions)
+- 🔶 **Over-hedging in chop** *(planned report metric)* — hedging every tick in a
+  whippy tape churns the spread away; the end-of-session report will surface
+  hedge-count vs realized vol so the churn is visible (no new mechanics needed).
+
+## Liquidity & regimes (plumbed / planned)
+- ✅ **Time-of-day** *(plumbed; effect deferred)* — the seed fixes a session start
+  hour + label (Asia / Europe / EU-US overlap / US). Wired now so later
+  liquidity-regime work is a multiplier on existing params, not a data change.
+- 🔶 **Liquidity regimes** *(planned)* — same clip is different risk thin-Asia vs.
+  US overlap; a slow-varying depth/τ/spread multiplier keyed off time-of-day.
+- 🔶 **Hard limits / forced liquidation** *(planned)* — breach the limit and you
+  become the toxic flow, forced to cross into the worst liquidity.
 
 ## Difficulty gating
 - **Easy** reveals archetype + bias + tells; lower toxicity/pickoff; calmer flow.

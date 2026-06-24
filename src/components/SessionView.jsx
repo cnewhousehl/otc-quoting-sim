@@ -43,7 +43,9 @@ function TopBar({ sim, onExit, denom, setDenom, presets, setPresets }) {
       <span className="meta">{session.current.difficulty}</span>
       <span className="meta">{session.current.config.scenario}</span>
       <span className="meta">t {Math.floor(state.timeSec)}s · {Math.round(state.progress * 100)}%</span>
+      {state.sessionClock && <span className="meta">{state.sessionClock.label}</span>}
       {stress > 0.15 && <span className="stress">⚠ vol {Math.round(stress * 100)}%</span>}
+      {state.toxAlerts?.length > 0 && <span className="stress neg">☣ toxic: {state.toxAlerts.join(' ')}</span>}
       <span className="meta">equity {usd(state.equity)}</span>
       <span className={`meta pnl ${state.totalPnL >= 0 ? 'pos' : 'neg'}`}>{signedUsd(state.totalPnL)}</span>
       <span className="spacer" />
@@ -142,7 +144,10 @@ function RfqCard({ rfq, sim, denom, presets }) {
           <button key={p} className="preset" onClick={() => quoteAt(p)} title={`stream ${p}bps`}>{p}</button>
         ))}
       </div>
-      <button className="send" onClick={() => quoteAt(w)}>stream quote</button>
+      <div className="rfq-actions">
+        <button className="send" onClick={() => quoteAt(w)}>stream quote</button>
+        <button className="pass" onClick={() => sim.passRfq(rfq.id)} title="decline — small favor cost">pass</button>
+      </div>
       <div className="ttl"><span style={{ width: `${ttlPct}%` }} /></div>
     </div>
   )

@@ -56,10 +56,15 @@ export function evaluateQuoteFill({ quote, mid, sigmaM, n, dt, rng, client, diff
   const dDiff = diff?.dDiff ?? 1
   // Bias also tilts which side fires first (a bullish client lifts; bearish hits).
   const bf = Math.exp(0.7 * (client.bias ?? 0))
+  // Snap: a quote far INSIDE the client's hedge cost is a steal — they take it
+  // fast (and a stale, in-the-money quote even faster). Names that are expensive
+  // to hedge (illiquid) therefore fill quickly at any sane width; liquid names
+  // (small hedge cost) are unaffected, preserving the width S-curve.
+  const snap = (w) => 1 + 3 * Math.max(0, 1 - w / Math.max(1e-9, hedge))
   const gAsk = fillG({ w: wAsk, reservation: resAsk, slope, floor: f.floor })
   const gBid = fillG({ w: wBid, reservation: resBid, slope, floor: f.floor })
-  const pAsk = 1 - Math.exp(-client.lambda * gAsk * bf * Rdur * dDiff * dt)
-  const pBid = 1 - Math.exp((-client.lambda * gBid * Rdur * dDiff * dt) / bf)
+  const pAsk = 1 - Math.exp(-client.lambda * gAsk * bf * snap(wAsk) * Rdur * dDiff * dt)
+  const pBid = 1 - Math.exp((-client.lambda * gBid * snap(wBid) * Rdur * dDiff * dt) / bf)
 
   const uAsk = rng.uniform(STREAMS.execHazard, n, quote.id, 0)
   const uBid = rng.uniform(STREAMS.execHazard, n, quote.id, 1)

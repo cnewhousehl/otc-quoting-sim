@@ -63,6 +63,7 @@ export function useSession(startConfig) {
   const hedge = useCallback((order) => { ref.current.hedge(order); refresh() }, [])
   const placeLimitHedge = useCallback((order) => { ref.current.placeLimitHedge(order); refresh() }, [])
   const cancelLimitHedge = useCallback((id) => { ref.current.cancelLimitHedge(id); refresh() }, [])
+  const passRfq = useCallback((rfqId) => { ref.current.passRfq(rfqId); refresh() }, [])
 
   const getBook = useCallback((venueId) => ref.current?.getBookSnapshot(venueId) ?? null, [])
   const venuesForAsset = useCallback((a) => ref.current?.venuesForAsset(a) ?? [], [])
@@ -70,7 +71,7 @@ export function useSession(startConfig) {
 
   return {
     session: ref, state, dirs, running, togglePause, activeAsset, setActiveAsset,
-    submitQuote, cancelQuote, refreshQuote, hedge, placeLimitHedge, cancelLimitHedge,
+    submitQuote, cancelQuote, refreshQuote, hedge, placeLimitHedge, cancelLimitHedge, passRfq,
     getBook, venuesForAsset, venueInfo,
   }
 }
