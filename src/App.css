@@ -117,6 +117,9 @@ body {
 .wfields { display: flex; gap: 8px; margin: 6px 0 4px; }
 .wfields label { font-size: 10px; color: var(--dim); display: flex; align-items: center; gap: 3px; }
 .wfields input { width: 46px; background: #0d1116; color: var(--fg); border: 1px solid var(--grid); border-radius: 4px; font-size: 11px; padding: 2px 4px; font-family: inherit; }
+.skewfield { font-size: 10px; color: var(--dim); display: flex; align-items: center; gap: 3px; }
+.skewbtn { background: #0d1116; color: var(--dim); border: 1px solid var(--grid); border-radius: 3px; font-size: 10px; padding: 2px 5px; cursor: pointer; font-family: inherit; }
+.skewbtn.on { color: var(--accent); border-color: var(--accent); }
 .presets { display: flex; gap: 4px; margin-bottom: 6px; }
 .preset { flex: 1; background: #0d1116; color: var(--accent); border: 1px solid var(--grid); border-radius: 4px; font-size: 11px; padding: 4px; cursor: pointer; font-family: inherit; }
 .preset:hover { border-color: var(--accent); }

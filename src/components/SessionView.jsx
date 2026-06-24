@@ -104,7 +104,9 @@ function RfqCard({ rfq, sim, denom, presets }) {
   const venue = sim.venuesForAsset(rfq.assetId)[0]
   const mid = sim.getBook(venue)?.mid ?? rfq.refPrice
   const [w, setW] = useState(8)
-  const [skew, setSkew] = useState(0)
+  const [skewDir, setSkewDir] = useState('bid') // 'bid' = lean up (aggressive bid), 'offer' = lean down
+  const [skewMag, setSkewMag] = useState(0)
+  const skew = skewDir === 'offer' ? -skewMag : skewMag
   const pos = sim.state.positions[rfq.assetId] ?? 0
   const quoteAt = (width) => {
     sim.submitQuote(rfq.id, { bid: mid * (1 + (skew - width) / 1e4), ask: mid * (1 + (skew + width) / 1e4) })
@@ -136,8 +138,13 @@ function RfqCard({ rfq, sim, denom, presets }) {
         <span className="ask">{px(ask)}</span>
       </div>
       <div className="wfields">
-        <label>width<input type="number" step="0.5" value={w} onChange={(e) => setW(+e.target.value)} />bps</label>
-        <label>skew<input type="number" step="0.5" value={skew} onChange={(e) => setSkew(+e.target.value)} />bps</label>
+        <label>width<input type="number" min="0" step="0.5" value={w} onChange={(e) => setW(Math.max(0, +e.target.value || 0))} />bps</label>
+        <span className="skewfield">
+          skew
+          <button className={`skewbtn ${skewDir === 'bid' ? 'on' : ''}`} onClick={() => setSkewDir('bid')} title="lean up — aggressive bid">bid</button>
+          <button className={`skewbtn ${skewDir === 'offer' ? 'on' : ''}`} onClick={() => setSkewDir('offer')} title="lean down — aggressive offer">offer</button>
+          <input type="number" min="0" step="0.5" value={skewMag} onChange={(e) => setSkewMag(Math.max(0, +e.target.value || 0))} />bps
+        </span>
       </div>
       <div className="presets">
         {presets.map((p) => (
