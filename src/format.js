@@ -14,3 +14,16 @@ export function px(p) {
   const d = p >= 1000 ? 2 : p >= 1 ? 3 : 5
   return fmt(p, d)
 }
+
+// Compact USD (e.g. $1.2M, $43k) for size/total columns in dollar mode.
+export function usdCompact(x) {
+  const a = Math.abs(x)
+  if (a >= 1e6) return `$${fmt(x / 1e6, 2)}M`
+  if (a >= 1e3) return `$${fmt(x / 1e3, 1)}k`
+  return `$${fmt(x, 0)}`
+}
+
+// A coin quantity rendered in the chosen denomination.
+export function qty(coin, price, denom) {
+  return denom === 'usd' ? usdCompact(coin * price) : fmt(coin, coin < 10 ? 3 : 2)
+}

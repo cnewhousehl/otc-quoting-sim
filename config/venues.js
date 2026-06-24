@@ -18,6 +18,7 @@ export const EXCHANGES = {
     halfSpreadBps: 0.6, levelStepBps: 0.3, epsBps: 0.1,
     depthTopNotional: 400_000, k0: 6, numLevels: 30, jitter: 0.2,
     kyleLambda: 0.3, phi: 0.2, tau: 4, lagTau: 0,
+    updateMult: 1.0, // price-discovery venue, fastest cadence
     toxTau: 8, kSpread: 0.8, kDepth: 0.6, // mid-skew set per-asset in buildVenues
   },
   'bybit-perp': {
@@ -25,11 +26,13 @@ export const EXCHANGES = {
     halfSpreadBps: 2.0, levelStepBps: 1.0, epsBps: 0.4,
     depthTopNotional: 100_000, k0: 4, numLevels: 24, jitter: 0.35,
     kyleLambda: 0.7, phi: 0.15, tau: 12, lagTau: 3,
+    updateMult: 1.5, // price-following venue, lags T1
     toxTau: 10, kSpread: 1.2, kDepth: 0.8,
   },
   'uni-amm': {
     tier: 'DEX', type: 'amm',
     feeBps: 30, poolNotional: 800_000, sampleLevels: 16,
+    updateMult: 2.5, // DEX reprices slowly between arbs, small size
   },
 }
 
@@ -46,14 +49,17 @@ export const ASSET_UNIVERSE = [
 
 const bps = (px, b) => (px * b) / 1e4
 
-export function buildVenues(universe = ASSET_UNIVERSE) {
+// baseUpdateTicks = T1 cadence in ticks (from the session's book-update setting);
+// each venue's updateEvery scales by its updateMult.
+export function buildVenues(universe = ASSET_UNIVERSE, { baseUpdateTicks = 6 } = {}) {
   const out = []
+  const ue = (mult) => Math.max(1, Math.round(baseUpdateTicks * mult))
   for (const a of universe) {
     for (const ex of a.venues) {
       const p = EXCHANGES[ex]
       const id = `${ex}:${a.id}`
       if (p.type === 'amm') {
-        out.push({ id, assetId: a.id, type: 'amm', tier: p.tier, feeBps: p.feeBps, poolBase: p.poolNotional / a.refPrice, sampleLevels: p.sampleLevels })
+        out.push({ id, assetId: a.id, type: 'amm', tier: p.tier, feeBps: p.feeBps, poolBase: p.poolNotional / a.refPrice, sampleLevels: p.sampleLevels, updateEvery: ue(p.updateMult) })
       } else {
         const halfSpread = bps(a.refPrice, p.halfSpreadBps)
         const depthTop = p.depthTopNotional / a.refPrice
@@ -64,7 +70,7 @@ export function buildVenues(universe = ASSET_UNIVERSE) {
           levelStep: bps(a.refPrice, p.levelStepBps),
           epsSigma: bps(a.refPrice, p.epsBps),
           depthTop, k0: p.k0, numLevels: p.numLevels, jitter: p.jitter,
-          kyleLambda: p.kyleLambda, phi: p.phi, tau: p.tau, lagTau: p.lagTau,
+          kyleLambda: p.kyleLambda, phi: p.phi, tau: p.tau, lagTau: p.lagTau, updateEvery: ue(p.updateMult),
           tox: { tau: p.toxTau, refFlow: depthTop * 2, kSpread: p.kSpread, kDepth: p.kDepth, kSkew: halfSpread },
         })
       }

@@ -33,6 +33,7 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
   const { config: gatedReq, gated } = gateSessionConfig({ difficulty, ...config }, tier)
   const cfg = { ...DEFAULT_SESSION, ...config, ...gatedReq }
   const diff = getDifficulty(cfg.difficulty)
+  if (cfg.bookUpdateSec == null) cfg.bookUpdateSec = diff.bookUpdateSec // difficulty default unless overridden
   const diffHaz = { dDiff: diff.hazardScale }
   const dt = cfg.dt
 
@@ -216,6 +217,10 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
       const client = resolveClient(entry, diff)
       client.bias = rfqObj?.bias ?? 0 // directional willingness to cross
       const mid = price.mid(q.assetId)
+      // Size-vs-liquidity urgency: a clip large relative to hedge liquidity makes
+      // the client tolerate a wider quote (they know it's illiquid to hedge).
+      const urg = Math.min(2, 0.7 * Math.log(1 + (q.size * mid) / Math.max(1, assetLiquidityNotional(q.assetId))))
+      client.reservation = mid * (diff.reservationBps / 1e4) * (1 + urg)
       const sigmaM = price.sigmaM(q.assetId)
       const res = evaluateQuoteFill({ quote: q, mid, sigmaM, n, dt, rng, client, diff: diffHaz })
       if (!res) continue
@@ -248,6 +253,16 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
   // ---- read APIs -------------------------------------------------------------
   function snapshotCash() {
     return pnl.snapshot().cash
+  }
+  // Cheapest cost (bps vs mid) to hedge `size` of an asset across its venues —
+  // shown on RFQs (Easy/Medium) so students can price relative to hedgability.
+  function estimateHedgeWidth(assetId, size) {
+    let best = null
+    for (const vid of book.venuesForAsset(assetId)) {
+      const est = book.estimateCost(vid, 'buy', size)
+      if (best == null || est.slipBps < best.bps) best = { bps: est.slipBps, venueId: vid, tier: book.venueInfo(vid).tier, partial: est.partial }
+    }
+    return best
   }
   function liveQuoteViews() {
     return quotes.live().map((q) => ({ id: q.id, rfqId: q.rfqId, assetId: q.assetId, clientId: q.clientId, bid: q.bid, ask: q.ask, size: q.size, ageTicks: n - q.createdTick, ttlTicks: q.ttlTicks, refreshCount: q.refreshCount }))
@@ -286,6 +301,7 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
     // reads
     getState, getEventLog: () => log.slice(),
     getBookSnapshot: (venueId) => book.getBookSnapshot(venueId),
+    estimateHedgeWidth,
     venueIds: () => book.venueIds(),
     venuesForAsset: (assetId) => book.venuesForAsset(assetId),
     venueInfo: (venueId) => book.venueInfo(venueId),

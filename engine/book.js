@@ -52,6 +52,7 @@ export function createBook({ rng, price, venues, dt = 0.25, crossVenueContagion 
       }
       return { venueId, assetId: h.assetId, ...r }
     },
+    estimateCost: (venueId, side, size) => need(venueId).estimateCost(side, size),
     tick: (n) => {
       for (const h of handlers.values()) h.tick(n)
     },

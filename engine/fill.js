@@ -67,16 +67,22 @@ export function evaluateQuoteFill({ quote, mid, sigmaM, n, dt, rng, client, diff
   const ageSec = (n - quote.createdTick) * dt
   if (ageSec <= 0) return null // decision latency: no fill on the creation tick
 
-  const eAsk = (mid - quote.ask) / sigmaM
-  const eBid = (quote.bid - mid) / sigmaM
+  // Staleness edge (σ_M units) drives sharp pickoff + fill severity. Willingness
+  // for SOFT/retail flow is measured against a reservation SPREAD R (bps-scale,
+  // widened by size/urgency) so realistic widths — even ~1% — can win flow. R
+  // falls back to σ_M when unset (keeps the unit fill tests unchanged).
+  const eStaleAsk = (mid - quote.ask) / sigmaM
+  const eStaleBid = (quote.bid - mid) / sigmaM
+  const R = client.reservation ?? sigmaM
+  const eWillAsk = client.archetype === 'sharp' ? eStaleAsk : (mid - quote.ask) / R
+  const eWillBid = client.archetype === 'sharp' ? eStaleBid : (quote.bid - mid) / R
 
   // Directional bias: a bullish client (bias>0) is keener to LIFT (buy the ask)
-  // even when it's wide, and less keen to hit; bearish is the mirror. This is how
-  // news sentiment and informed conviction tilt willingness to cross the spread.
+  // even when it's wide, and less keen to hit; bearish is the mirror.
   const bias = client.bias ?? 0
   const biasBeta = 0.9
-  const hAsk = fillHazard({ e: eAsk, ageSec, size: quote.size, client, diff }) * Math.exp(biasBeta * bias)
-  const hBid = fillHazard({ e: eBid, ageSec, size: quote.size, client, diff }) * Math.exp(-biasBeta * bias)
+  const hAsk = fillHazard({ e: eWillAsk, ageSec, size: quote.size, client, diff }) * Math.exp(biasBeta * bias)
+  const hBid = fillHazard({ e: eWillBid, ageSec, size: quote.size, client, diff }) * Math.exp(-biasBeta * bias)
   const pAsk = 1 - Math.exp(-hAsk * dt)
   const pBid = 1 - Math.exp(-hBid * dt)
 
@@ -88,11 +94,11 @@ export function evaluateQuoteFill({ quote, mid, sigmaM, n, dt, rng, client, diff
   if (!askFires && !bidFires) return null
 
   let side
-  if (askFires && bidFires) side = eAsk >= eBid ? 'ask' : 'bid'
+  if (askFires && bidFires) side = eStaleAsk >= eStaleBid ? 'ask' : 'bid'
   else side = askFires ? 'ask' : 'bid'
 
   if (side === 'ask') {
-    return { side: 'ask', clientBuys: true, price: quote.ask, edge: eAsk }
+    return { side: 'ask', clientBuys: true, price: quote.ask, edge: eStaleAsk }
   }
-  return { side: 'bid', clientBuys: false, price: quote.bid, edge: eBid }
+  return { side: 'bid', clientBuys: false, price: quote.bid, edge: eStaleBid }
 }

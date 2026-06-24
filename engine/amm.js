@@ -17,13 +17,12 @@ export function createAmmVenue({ price, cfg }) {
   const fee = feeBps / 1e4
   const Rx = cfg.poolBase // base reserve; quote reserve Ry = Rx · M (price = M)
   const sampleLevels = cfg.sampleLevels ?? 20
+  const updateEvery = Math.max(1, cfg.updateEvery ?? 1)
+  let heldMid = price.mid(cfg.assetId) // DEX reprices slowly (delayed), small size
 
-  const reserves = () => {
-    const M = price.mid(cfg.assetId)
-    return { Rx, Ry: Rx * M, M }
-  }
+  const reserves = () => ({ Rx, Ry: Rx * heldMid, M: heldMid })
 
-  const mid = () => price.mid(cfg.assetId)
+  const mid = () => heldMid
 
   // Exact constant-product execution. buy: pay quote for dx base; sell: receive
   // quote for dx base. Always "fills" up to ~the pool, with slippage from x·y=k.
@@ -76,9 +75,17 @@ export function createAmmVenue({ price, cfg }) {
     return { mid: M, spread: asks[0].price - bids[0].price, bids, asks }
   }
 
-  function tick() {
-    // stateless per tick — reserves re-anchor to M_t on read
+  function estimateCost(side, size) {
+    const { Rx: x, Ry: y, M } = reserves()
+    let dx = Math.min(size, x * 0.98)
+    const dy = side === 'buy' ? (y * dx) / (x - dx) : (y * dx) / (x + dx)
+    const vwap = side === 'buy' ? (dy * (1 + fee)) / dx : (dy * (1 - fee)) / dx
+    return { vwap, filledSize: dx, partial: size > x * 0.98, slipBps: (Math.abs(vwap - M) / M) * 1e4, mid: M }
   }
 
-  return { id: cfg.id, assetId: cfg.assetId, type: 'amm', tier: cfg.tier ?? 'DEX', mid, getBookSnapshot, executeMarketable, tick }
+  function tick(n) {
+    if (n % updateEvery === 0) heldMid = price.mid(cfg.assetId) // arb re-anchors on cadence
+  }
+
+  return { id: cfg.id, assetId: cfg.assetId, type: 'amm', tier: cfg.tier ?? 'DEX', mid, getBookSnapshot, executeMarketable, estimateCost, tick }
 }

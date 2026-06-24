@@ -40,5 +40,6 @@ export function buildSessionWorld(cfg) {
     jumpIntensity: cfg.jumpIntensityBase * sc.jumpMult,
     jumpSigma: cfg.jumpSigmaBase * sc.volMult,
   }))
-  return { assets, venues: buildVenues(), universe: ASSET_UNIVERSE }
+  const baseUpdateTicks = Math.max(1, Math.round((cfg.bookUpdateSec ?? 2.5) / cfg.dt))
+  return { assets, venues: buildVenues(ASSET_UNIVERSE, { baseUpdateTicks }), universe: ASSET_UNIVERSE }
 }

@@ -36,6 +36,7 @@ function defaults(cfg) {
     phi: cfg.phi ?? 0,
     tau: cfg.tau ?? 0, // resilience time-constant (0 → instant regrow)
     lagTau: cfg.lagTau ?? 0, // staleness lag (0 → tracks M_t exactly); T2 large
+    updateEvery: Math.max(1, cfg.updateEvery ?? 1), // discrete repaint cadence (T1=1, T2=2…)
     tox: cfg.tox ?? null, // { tau, refFlow, kSpread, kDepth, kSkew }
   }
 }
@@ -49,14 +50,17 @@ export function createPerpVenue({ rng, price, dt, cfg: rawCfg }) {
   let steadyDepth = 0
   for (let k = 0; k < cfg.numLevels; k++) steadyDepth += cfg.depthTop * Math.exp(-k / cfg.k0)
 
-  let eps = 0
   let skewImpact = 0 // accumulated permanent (Kyle-λ) impact, price units
   let lagged = price.mid(cfg.assetId)
+  let heldAnchor = price.mid(cfg.assetId) // displayed reference, refreshed discretely
+  let heldEps = 0
   let lastTick = 0
 
+  // Displayed reference mid. The anchor/ε only refresh every `updateEvery` ticks
+  // (T1 fast, T2/T3 slower) so the book updates on the order of seconds, not
+  // 4×/sec. Impact/toxicity skews still respond to trades immediately.
   function refMid() {
-    const anchor = cfg.lagTau > 0 ? lagged : price.mid(cfg.assetId)
-    return anchor + cfg.basis + eps + skewImpact + tox.skew(cfg.id)
+    return heldAnchor + cfg.basis + heldEps + skewImpact + tox.skew(cfg.id)
   }
 
   const effHalfSpread = () => cfg.halfSpread * tox.spreadMult(cfg.id)
@@ -83,10 +87,14 @@ export function createPerpVenue({ rng, price, dt, cfg: rawCfg }) {
 
   function tick(n) {
     lastTick = n
-    eps = cfg.epsSigma > 0 ? cfg.epsSigma * rng.normal(STREAMS.book, n, cfg.id, IDX.eps) : 0
     if (cfg.lagTau > 0) {
       const a = 1 - Math.exp(-dt / cfg.lagTau)
       lagged += (price.mid(cfg.assetId) - lagged) * a
+    }
+    // Discrete repaint: refresh the displayed anchor/ε only on the cadence.
+    if (n % cfg.updateEvery === 0) {
+      heldAnchor = cfg.lagTau > 0 ? lagged : price.mid(cfg.assetId)
+      heldEps = cfg.epsSigma > 0 ? cfg.epsSigma * rng.normal(STREAMS.book, n, cfg.id, IDX.eps) : 0
     }
     resilience.regrow()
     tox.decayAll()
@@ -139,6 +147,25 @@ export function createPerpVenue({ rng, price, dt, cfg: rawCfg }) {
     }
   }
 
+  // Non-mutating estimate of the cost (bps vs mid) to take `size` on a side —
+  // for showing the student how expensive a clip is to hedge before they quote.
+  function estimateCost(side, size) {
+    const ladder = buildLadder(lastTick)
+    const levels = side === 'buy' ? ladder.asks : ladder.bids
+    let remaining = size
+    let cost = 0
+    let filled = 0
+    for (const lvl of levels) {
+      if (remaining <= 0) break
+      const take = Math.min(remaining, lvl.size)
+      cost += take * lvl.price
+      filled += take
+      remaining -= take
+    }
+    const vwap = filled > 0 ? cost / filled : ladder.mid
+    return { vwap, filledSize: filled, partial: remaining > 1e-9, slipBps: (Math.abs(vwap - ladder.mid) / ladder.mid) * 1e4, mid: ladder.mid }
+  }
+
   // Cross-venue contagion (M9.6): aggressive flow on a sibling venue makes THIS
   // venue's makers wary too — feed the lean into toxicity without consuming
   // depth. So hitting T1 widens/thins T2 (and vice versa). DEX venues are immune.
@@ -146,5 +173,5 @@ export function createPerpVenue({ rng, price, dt, cfg: rawCfg }) {
     tox.observe(cfg.id, signed)
   }
 
-  return { id: cfg.id, assetId: cfg.assetId, type: 'perp', tier: cfg.tier, mid, getBookSnapshot, executeMarketable, tick, observeExternalFlow }
+  return { id: cfg.id, assetId: cfg.assetId, type: 'perp', tier: cfg.tier, mid, getBookSnapshot, executeMarketable, estimateCost, tick, observeExternalFlow }
 }

@@ -12,16 +12,20 @@
 
 // Auxiliary (non-Q6) constants shared across levels unless overridden.
 const AUX = {
-  softS1: 3.0, // soft logistic amplitude
-  softB: 0.8, // soft logistic slope (σ)
+  softS1: 2.2, // soft logistic amplitude (calibrated for the reservation-spread model)
+  softB: 0.6, // soft logistic slope (reservation units)
   sharpLambda: 0.4, // sharp contact rate (spike comes from g_sharp, not λ)
   rho: 0.85, // toxic-drift exponential decay per tick
   xRef: 5, // size reference for L(X)
   tauReact: 2.0, // decision-latency time constant (s)
 }
 
-function level({ pTox, softLambda, s0, omega, q0, aPick, bSharp, theta, pickoffScale, deltaTox, N, eta, hazardScale, arrivalRate, maxPendingRFQs, transparency }) {
+function level({ pTox, softLambda, s0, omega, q0, aPick, bSharp, theta, pickoffScale, deltaTox, N, eta, hazardScale, arrivalRate, maxPendingRFQs, transparency, reservationBps, bookUpdateSec }) {
   return {
+    // Soft-fill width scale (bps of mid): a fair clip fills well out to ~this
+    // width, and (with size/bias) you can still win flow quoting ~1%.
+    reservationBps,
+    bookUpdateSec, // default book repaint cadence (slower = calmer/easier)
     pTox, // (Q6) sharp/toxic share of flow
     soft: { lambda: softLambda, s0, s1: AUX.softS1, omega, b: AUX.softB }, // (Q6) λ_soft, s0, ω_soft
     // (Q6) q0, A_pick, θ_sharp, b_sharp; pickoffScale is the §1.3 "stale-pickoff
@@ -40,22 +44,25 @@ function level({ pTox, softLambda, s0, omega, q0, aPick, bSharp, theta, pickoffS
 
 export const DIFFICULTY = {
   easy: level({
-    pTox: 0.15, softLambda: 0.4, s0: 0.75, omega: 2.0,
+    pTox: 0.15, softLambda: 0.4, s0: 0.06, omega: 0.0,
     q0: 0.02, aPick: 0.6, bSharp: 0.6, theta: 0.3, pickoffScale: 0.6,
     deltaTox: 0.8, N: 16, eta: 0.3,
     hazardScale: 0.075, arrivalRate: 0.5, maxPendingRFQs: 3, transparency: 'full',
+    reservationBps: 90, bookUpdateSec: 5,
   }),
   medium: level({
-    pTox: 0.35, softLambda: 0.32, s0: 0.6, omega: 1.4,
+    pTox: 0.35, softLambda: 0.32, s0: 0.05, omega: 0.0,
     q0: 0.02, aPick: 1.4, bSharp: 0.45, theta: 0.1, pickoffScale: 1.0,
     deltaTox: 1.6, N: 24, eta: 0.2,
     hazardScale: 0.075, arrivalRate: 0.8, maxPendingRFQs: 5, transparency: 'archetype',
+    reservationBps: 60, bookUpdateSec: 2.5,
   }),
   hard: level({
-    pTox: 0.6, softLambda: 0.28, s0: 0.5, omega: 1.0,
+    pTox: 0.6, softLambda: 0.28, s0: 0.04, omega: 0.0,
     q0: 0.03, aPick: 2.6, bSharp: 0.35, theta: 0.0, pickoffScale: 1.0,
     deltaTox: 2.6, N: 32, eta: 0.12,
     hazardScale: 0.075, arrivalRate: 1.2, maxPendingRFQs: 8, transparency: 'hidden',
+    reservationBps: 38, bookUpdateSec: 1,
   }),
 }
 
