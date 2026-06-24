@@ -86,6 +86,25 @@ describe('venues — DEX AMM exact slippage (x·y=k)', () => {
 })
 
 describe('venues — toxicity reaction through a perp venue', () => {
+  it('hitting T1 widens the SIBLING T2 venue (cross-venue contagion), DEX immune', () => {
+    const { book } = market({ seed: 8 })
+    const t2Base = book.getBookSnapshot('bybit-perp:BTC').spread
+    const dexBaseBps = (() => {
+      const s = book.getBookSnapshot('uni-amm:BTC')
+      return s.spread / s.mid
+    })()
+    // hammer only T1
+    for (let nn = 1; nn <= 6; nn++) {
+      book.executeMarketable({ venueId: 'binance-perp:BTC', side: 'buy', size: 3 })
+      book.tick(nn)
+    }
+    expect(book.getBookSnapshot('bybit-perp:BTC').spread).toBeGreaterThan(t2Base) // T2 widened
+    // DEX is a curve — its relative (fee) spread is unchanged; absolute only moved
+    // because the mid moved (φ feedback), not contagion.
+    const dex = book.getBookSnapshot('uni-amm:BTC')
+    expect(dex.spread / dex.mid).toBeCloseTo(dexBaseBps, 6)
+  })
+
   it('sustained one-sided hedging widens the venue spread, which then heals', () => {
     const { book } = market({ seed: 5 })
     const base = book.getBookSnapshot('bybit-perp:BTC').spread

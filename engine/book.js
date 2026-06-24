@@ -17,7 +17,7 @@
 import { createPerpVenue } from './perpVenue.js'
 import { createAmmVenue } from './amm.js'
 
-export function createBook({ rng, price, venues, dt = 0.25 }) {
+export function createBook({ rng, price, venues, dt = 0.25, crossVenueContagion = 0.4 }) {
   const handlers = new Map()
   for (const v of venues) {
     const type = v.type ?? 'perp'
@@ -39,7 +39,18 @@ export function createBook({ rng, price, venues, dt = 0.25 }) {
     getBookSnapshot: (venueId) => need(venueId).getBookSnapshot(),
     executeMarketable: ({ venueId, side, size }) => {
       const h = need(venueId)
-      return { venueId, assetId: h.assetId, ...h.executeMarketable({ side, size }) }
+      const r = h.executeMarketable({ side, size })
+      // Contagion: sibling perp venues on the same asset feel a fraction of the
+      // flow (their makers infer informed/aggressive flow market-wide).
+      if (h.type === 'perp' && crossVenueContagion > 0) {
+        const signed = (side === 'buy' ? r.filledSize : -r.filledSize) * crossVenueContagion
+        for (const sib of handlers.values()) {
+          if (sib !== h && sib.assetId === h.assetId && sib.observeExternalFlow) {
+            sib.observeExternalFlow(signed)
+          }
+        }
+      }
+      return { venueId, assetId: h.assetId, ...r }
     },
     tick: (n) => {
       for (const h of handlers.values()) h.tick(n)

@@ -139,5 +139,12 @@ export function createPerpVenue({ rng, price, dt, cfg: rawCfg }) {
     }
   }
 
-  return { id: cfg.id, assetId: cfg.assetId, type: 'perp', tier: cfg.tier, mid, getBookSnapshot, executeMarketable, tick }
+  // Cross-venue contagion (M9.6): aggressive flow on a sibling venue makes THIS
+  // venue's makers wary too — feed the lean into toxicity without consuming
+  // depth. So hitting T1 widens/thins T2 (and vice versa). DEX venues are immune.
+  function observeExternalFlow(signed) {
+    tox.observe(cfg.id, signed)
+  }
+
+  return { id: cfg.id, assetId: cfg.assetId, type: 'perp', tier: cfg.tier, mid, getBookSnapshot, executeMarketable, tick, observeExternalFlow }
 }
