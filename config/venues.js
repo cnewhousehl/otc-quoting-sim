@@ -80,3 +80,17 @@ export function isDexOnly(assetId, universe = ASSET_UNIVERSE) {
   const v = venuesForAsset(assetId, universe)
   return v.length > 0 && v.every((ex) => EXCHANGES[ex]?.type === 'amm')
 }
+
+// Aggregate top-of-book liquidity (notional) listing an asset — used by M8 to
+// couple RFQ clip sizes to how liquid the name is. DEX pools count at a fraction
+// (you can't move size through a small pool).
+export function assetLiquidityNotional(assetId, universe = ASSET_UNIVERSE) {
+  const a = universe.find((x) => x.id === assetId)
+  if (!a) return 0
+  let total = 0
+  for (const ex of a.venues) {
+    const p = EXCHANGES[ex]
+    total += p.type === 'amm' ? p.poolNotional * 0.1 : p.depthTopNotional
+  }
+  return total
+}
