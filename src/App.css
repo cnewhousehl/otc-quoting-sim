@@ -329,3 +329,13 @@ body {
 .bias.bullish { color: var(--bid); border-color: var(--bid); }
 .bias.bearish { color: var(--ask); border-color: var(--ask); }
 .bias.neutral { color: var(--dim); border-color: var(--grid); }
+
+/* hedge limit mode */
+.modetoggle { display: inline-flex; gap: 2px; }
+.modetoggle button { background: #0d1116; color: var(--dim); border: 1px solid var(--grid); border-radius: 4px; font-size: 10px; padding: 1px 6px; cursor: pointer; font-family: inherit; }
+.modetoggle button.on { color: var(--accent); border-color: var(--accent); }
+.limits { margin-top: 6px; border-top: 1px solid var(--grid); padding-top: 4px; }
+.limrow { display: flex; justify-content: space-between; align-items: center; font-size: 11px; padding: 2px 0; font-variant-numeric: tabular-nums; }
+.limrow.buy { color: var(--bid); }
+.limrow.sell { color: var(--ask); }
+.limrow button { background: transparent; color: var(--dim); border: none; cursor: pointer; font-size: 13px; }

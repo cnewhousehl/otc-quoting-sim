@@ -76,6 +76,8 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
   const rfqs = new Map() // rfqId -> rfq (all)
   const pending = new Map() // rfqId -> rfq awaiting a quote (counts toward cap)
   const quoteByRfq = new Map() // rfqId -> quoteId
+  const restingLimits = [] // passive hedge limit orders awaiting the market
+  let limitSeq = 0
 
   function emit(rec) {
     const full = { tick: n, ...rec }
@@ -121,6 +123,24 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
     pending.delete(rfqId)
   }
 
+  // Passive/limit hedge: rests until the venue mid reaches it, then fills at the
+  // limit price with NO slippage (you provided liquidity). May never fill — the
+  // save-the-spread-vs-miss-the-hedge tradeoff. Great for pre-arming an options
+  // hedge so a fill leaves you immediately flat.
+  function placeLimitHedge({ assetId, venueId, side, size, price }) {
+    const id = `lim${++limitSeq}`
+    restingLimits.push({ id, assetId, venueId, side, size, price })
+    emit({ type: 'limit_place', limitId: id, assetId, venueId, side, sizeX: size, price })
+    return id
+  }
+  function cancelLimitHedge(id) {
+    const i = restingLimits.findIndex((l) => l.id === id)
+    if (i >= 0) {
+      restingLimits.splice(i, 1)
+      emit({ type: 'limit_cancel', limitId: id })
+    }
+  }
+
   // ---- the tick --------------------------------------------------------------
   function tick() {
     if (done) return []
@@ -141,6 +161,18 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
       attr[id] = { midBefore: midBefore[id], midAfter: price.mid(id), rGBM: c.rGBM }
     }
     pnl.onTick(attr)
+
+    // (4b) passive limit hedges fill when the venue mid reaches them (no slippage)
+    for (const lim of [...restingLimits]) {
+      const m = book.mid(lim.venueId)
+      const hit = lim.side === 'buy' ? m <= lim.price : m >= lim.price
+      if (hit) {
+        pnl.onHedge({ assetId: lim.assetId, buy: lim.side === 'buy', size: lim.size, vwap: lim.price, fee: 0, meta: { venueId: lim.venueId, limit: true } })
+        const idx = restingLimits.indexOf(lim)
+        if (idx >= 0) restingLimits.splice(idx, 1)
+        events.push(emit({ type: 'limit_fill', assetId: lim.assetId, venueId: lim.venueId, side: lim.side, sizeX: lim.size, price: lim.price }))
+      }
+    }
 
     // sentiment fades each tick
     for (const id of assetIds) sentiment[id] *= SENT_DECAY
@@ -244,12 +276,13 @@ export function createSession({ seed, difficulty = 'medium', tier = 'free', conf
       news: recentNews.slice(0, 5),
       nextNewsSec: news.ticksToNext(n) * dt,
       sentiment: { ...sentiment },
+      restingLimits: restingLimits.slice(),
     }
   }
 
   return {
     // mutation
-    tick, submitQuote, cancelQuote, refreshQuote, hedge,
+    tick, submitQuote, cancelQuote, refreshQuote, hedge, placeLimitHedge, cancelLimitHedge,
     // reads
     getState, getEventLog: () => log.slice(),
     getBookSnapshot: (venueId) => book.getBookSnapshot(venueId),
@@ -287,6 +320,8 @@ function applyAction(s, a) {
     case 'cancelQuote': return s.cancelQuote(a.rfqId)
     case 'refreshQuote': return s.refreshQuote(a.rfqId, { bid: a.bid, ask: a.ask })
     case 'hedge': return s.hedge(a)
+    case 'placeLimitHedge': return s.placeLimitHedge(a)
+    case 'cancelLimitHedge': return s.cancelLimitHedge(a.limitId)
     default: return null
   }
 }

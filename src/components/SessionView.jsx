@@ -229,24 +229,58 @@ function HedgePanel({ sim }) {
   const { state, activeAsset } = sim
   const venues = sim.venuesForAsset(activeAsset)
   const [vid, setVid] = useState(venues[0])
-  const [size, setSize] = useState(0.5)
-  const pos = state.positions[activeAsset] ?? 0
   const v = venues.includes(vid) ? vid : venues[0]
+  const [size, setSize] = useState(0.5)
+  const [mode, setMode] = useState('market')
+  const [price, setPrice] = useState('')
+  const mid = sim.getBook(v)?.mid ?? 0
+  const limPrice = price === '' ? mid : Number(price)
+  const pos = state.positions[activeAsset] ?? 0
+  const myLimits = state.restingLimits.filter((l) => l.assetId === activeAsset)
+
   return (
     <div className="panel">
-      <div className="panel-h">Hedge {activeAsset}</div>
+      <div className="panel-h">
+        Hedge {activeAsset}
+        <span className="modetoggle">
+          <button className={mode === 'market' ? 'on' : ''} onClick={() => setMode('market')}>mkt</button>
+          <button className={mode === 'limit' ? 'on' : ''} onClick={() => setMode('limit')}>lim</button>
+        </span>
+      </div>
       <select value={v} onChange={(e) => setVid(e.target.value)}>
         {venues.map((x) => <option key={x} value={x}>{sim.venueInfo(x).tier} · {x.split(':')[0]}</option>)}
       </select>
       <input className="size-in" type="number" step="0.1" value={size} onChange={(e) => setSize(+e.target.value)} />
+      {mode === 'limit' && (
+        <input className="size-in" type="number" placeholder={`limit px (mid ${px(mid)})`} value={price} onChange={(e) => setPrice(e.target.value)} />
+      )}
       <div className="hedge-btns">
-        <button className="buy" onClick={() => sim.hedge({ assetId: activeAsset, venueId: v, side: 'buy', size: Math.abs(size) })}>buy</button>
-        <button className="sell" onClick={() => sim.hedge({ assetId: activeAsset, venueId: v, side: 'sell', size: Math.abs(size) })}>sell</button>
+        {mode === 'market' ? (
+          <>
+            <button className="buy" onClick={() => sim.hedge({ assetId: activeAsset, venueId: v, side: 'buy', size: Math.abs(size) })}>buy</button>
+            <button className="sell" onClick={() => sim.hedge({ assetId: activeAsset, venueId: v, side: 'sell', size: Math.abs(size) })}>sell</button>
+          </>
+        ) : (
+          <>
+            <button className="buy" onClick={() => sim.placeLimitHedge({ assetId: activeAsset, venueId: v, side: 'buy', size: Math.abs(size), price: limPrice })}>rest buy</button>
+            <button className="sell" onClick={() => sim.placeLimitHedge({ assetId: activeAsset, venueId: v, side: 'sell', size: Math.abs(size), price: limPrice })}>rest sell</button>
+          </>
+        )}
       </div>
-      {Math.abs(pos) > 1e-9 && (
+      {mode === 'market' && Math.abs(pos) > 1e-9 && (
         <button className="flat" onClick={() => sim.hedge({ assetId: activeAsset, venueId: v, side: pos > 0 ? 'sell' : 'buy', size: Math.abs(pos) })}>
           flatten ({pos > 0 ? 'sell' : 'buy'} {fmt(Math.abs(pos), 3)})
         </button>
+      )}
+      {myLimits.length > 0 && (
+        <div className="limits">
+          {myLimits.map((l) => (
+            <div key={l.id} className={`limrow ${l.side}`}>
+              <span>{l.side} {fmt(l.size, 2)} @ {px(l.price)}</span>
+              <button onClick={() => sim.cancelLimitHedge(l.id)}>×</button>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   )
