@@ -15,9 +15,6 @@ const TIER = resolveActiveTier({
 
 export default function App() {
   const [startConfig, setStartConfig] = useState(null)
-
-  if (!startConfig) {
-    return <Lobby tier={TIER} onStart={setStartConfig} />
-  }
+  if (!startConfig) return <Lobby tier={TIER} onStart={setStartConfig} />
   return <SessionView key={startConfig.seed} startConfig={startConfig} onExit={() => setStartConfig(null)} />
 }

@@ -1,58 +1,53 @@
 import { useState } from 'react'
 import { useSession } from '../sim/useSession.js'
 import Ladder from './Ladder.jsx'
-import { fmt, usd, signedUsd, px } from '../format.js'
+import { fmt, usd, usdCompact, signedUsd, px } from '../format.js'
 
 export default function SessionView({ startConfig, onExit }) {
   const sim = useSession(startConfig)
-  const { state, dirs, activeAsset, setActiveAsset } = sim
+  const [denom, setDenom] = useState('coin')
+  const { state } = sim
   if (!state) return <div className="loading">booting session…</div>
-
   const assets = sim.session.current.assetIds()
 
   return (
-    <div className="terminal-wide">
-      <TopBar sim={sim} onExit={onExit} />
+    <div className="desk">
+      <TopBar sim={sim} onExit={onExit} denom={denom} setDenom={setDenom} />
       <NewsBar state={state} />
-      <div className="layout">
-        <aside className="col rfqs">
-          <RfqInbox sim={sim} />
-          <LiveQuotes sim={sim} />
+      <div className="desk-body">
+        <aside className="rfq-col">
+          <RfqInbox sim={sim} denom={denom} />
         </aside>
-
-        <main className="col books">
-          <div className="asset-tabs">
-            {assets.map((a) => (
-              <button key={a} className={`atab ${a === activeAsset ? 'on' : ''} ${dirs[a] || ''}`} onClick={() => setActiveAsset(a)}>
-                {a}
-              </button>
-            ))}
-          </div>
-          <BooksForAsset sim={sim} asset={activeAsset} />
-        </main>
-
-        <aside className="col side">
-          <Positions sim={sim} />
+        <aside className="manage-col">
+          <Positions sim={sim} denom={denom} />
           <Pnl state={state} />
-          <HedgePanel sim={sim} />
+          <Trades state={state} denom={denom} />
         </aside>
+        <main className="books-grid">
+          {assets.map((a) => (
+            <AssetBook key={a} sim={sim} asset={a} denom={denom} />
+          ))}
+        </main>
       </div>
-      <TradesTape state={state} />
     </div>
   )
 }
 
-function TopBar({ sim, onExit }) {
+function TopBar({ sim, onExit, denom, setDenom }) {
   const { state, running, togglePause, session } = sim
-  const pct = Math.round(state.progress * 100)
   return (
     <header className="bar">
       <span className="title">OTC DESK</span>
       <span className="meta">{session.current.difficulty}</span>
       <span className="meta">{session.current.config.scenario}</span>
-      <span className="meta">t {Math.floor(state.timeSec)}s · {pct}%</span>
+      <span className="meta">t {Math.floor(state.timeSec)}s · {Math.round(state.progress * 100)}%</span>
       <span className="meta">equity {usd(state.equity)}</span>
       <span className={`meta pnl ${state.totalPnL >= 0 ? 'pos' : 'neg'}`}>{signedUsd(state.totalPnL)}</span>
+      <span className="spacer" />
+      <span className="denom">
+        <button className={denom === 'coin' ? 'on' : ''} onClick={() => setDenom('coin')}>coin</button>
+        <button className={denom === 'usd' ? 'on' : ''} onClick={() => setDenom('usd')}>$</button>
+      </span>
       <button className="ctl" onClick={togglePause}>{running ? '⏸' : '▶'}</button>
       <button className="ctl" onClick={onExit}>exit</button>
     </header>
@@ -60,70 +55,53 @@ function TopBar({ sim, onExit }) {
 }
 
 function NewsBar({ state }) {
-  const latest = state.news && state.news[0]
+  const feed = state.news || []
   const next = Math.ceil(state.nextNewsSec ?? 0)
   return (
     <div className="newsbar">
-      <span className="news-tag">NEWS</span>
-      {latest ? (
-        <span className={`news-head ${latest.direction > 0 ? 'up' : 'down'}`}>
-          {latest.direction > 0 ? '▲' : '▼'} {latest.headline}
-          <em>{latest.magnitude}{latest.scope === 'asset' ? ` · ${latest.assets.join('/')}` : ' · macro'}</em>
-        </span>
-      ) : (
-        <span className="news-head dim">watching the wires…</span>
-      )}
-      <span className="news-next">next in {next}s</span>
-    </div>
-  )
-}
-
-function BooksForAsset({ sim, asset }) {
-  const venues = sim.venuesForAsset(asset)
-  const [vid, setVid] = useState(venues[0])
-  const active = venues.includes(vid) ? vid : venues[0]
-  const snap = sim.getBook(active)
-  const info = sim.venueInfo(active)
-  return (
-    <div>
-      <div className="venue-tabs">
-        {venues.map((v) => {
-          const s = sim.getBook(v)
-          const inf = sim.venueInfo(v)
-          return (
-            <button key={v} className={`vtab ${v === active ? 'on' : ''}`} onClick={() => setVid(v)}>
-              <span>{inf.tier}</span>
-              <small>{s ? `${((s.spread / s.mid) * 1e4).toFixed(1)}bps` : ''}</small>
-            </button>
-          )
-        })}
+      <div className="news-side">
+        <span className="news-tag">NEWS</span>
+        <span className="news-next">next {next}s</span>
       </div>
-      <div className="venue-label">{active} · {info.type === 'amm' ? 'DEX AMM' : 'perp'}</div>
-      <Ladder snap={snap} dir={sim.dirs[asset]} />
+      <div className="news-feed">
+        {feed.length === 0 && <span className="news-head dim">watching the wires…</span>}
+        {feed.map((nv, i) => (
+          <span key={i} className={`news-line ${nv.direction > 0 ? 'up' : 'down'} ${i === 0 ? 'latest' : ''}`}>
+            {nv.direction > 0 ? '▲' : '▼'} {nv.headline}
+            <em>{nv.magnitude}{nv.scope === 'asset' ? ` · ${nv.assets.join('/')}` : ' · macro'}</em>
+          </span>
+        ))}
+      </div>
     </div>
   )
 }
 
-function RfqInbox({ sim }) {
+// ---- left: RFQ inbox + live quotes -----------------------------------------
+function RfqInbox({ sim, denom }) {
   const { state } = sim
   return (
-    <div className="panel">
+    <div className="panel fill">
       <div className="panel-h">RFQs <span className="badge">{state.pendingRfqs.length}</span></div>
-      {state.pendingRfqs.length === 0 && <div className="empty">waiting for inbound…</div>}
-      {state.pendingRfqs.map((r) => <RfqCard key={r.id} rfq={r} sim={sim} />)}
+      <div className="scroll">
+        {state.pendingRfqs.length === 0 && <div className="empty">waiting for inbound…</div>}
+        {state.pendingRfqs.map((r) => <RfqCard key={r.id} rfq={r} sim={sim} denom={denom} />)}
+        <LiveQuotes sim={sim} />
+      </div>
     </div>
   )
 }
 
-function RfqCard({ rfq, sim }) {
+function RfqCard({ rfq, sim, denom }) {
   const venue = sim.venuesForAsset(rfq.assetId)[0]
   const mid = sim.getBook(venue)?.mid ?? rfq.refPrice
-  const [w, setW] = useState(8) // half-width, bps
-  const [skew, setSkew] = useState(0) // signed skew, bps (lean to manage inventory)
+  const [w, setW] = useState(8)
+  const [skew, setSkew] = useState(0)
   const pos = sim.state.positions[rfq.assetId] ?? 0
   const bid = mid * (1 + (skew - w) / 1e4)
   const ask = mid * (1 + (skew + w) / 1e4)
   const ttlPct = Math.max(0, 100 - (rfq.ageTicks / rfq.pendingTtlTicks) * 100)
+  const showHedge = sim.session.current.difficulty !== 'hard'
+  const hc = showHedge ? sim.session.current.estimateHedgeWidth(rfq.assetId, rfq.size) : null
 
   return (
     <div className="rfq">
@@ -132,20 +110,21 @@ function RfqCard({ rfq, sim }) {
           {rfq.handle}
           {rfq.biasShown && <span className={`bias ${rfq.biasLabel}`}>{rfq.biasLabel}</span>}
         </span>
-        <span className="amt">{usd(rfq.notional)} {rfq.assetId}</span>
+        <span className="amt">{usd(rfq.notional)}</span>
       </div>
       <div className="rfq-sub">
-        two-way · size {fmt(rfq.size, 3)}
-        {pos !== 0 && <span className={`pos-hint ${pos > 0 ? 'long' : 'short'}`}>you {pos > 0 ? 'long' : 'short'} {fmt(Math.abs(pos), 2)}</span>}
+        <span>{rfq.assetId} · {denom === 'usd' ? usdCompact(rfq.notional) : `${fmt(rfq.size, 3)}`}</span>
+        {hc && hc.bps != null && <span className="hedgehint">hedge ~{hc.bps.toFixed(0)}bps {hc.tier}</span>}
       </div>
+      {pos !== 0 && <div className={`pos-hint ${pos > 0 ? 'long' : 'short'}`}>you {pos > 0 ? 'long' : 'short'} {fmt(Math.abs(pos), 2)} — skew to flatten</div>}
       <div className="quote-row">
         <span className="bid">{px(bid)}</span>
         <span className="x">/</span>
         <span className="ask">{px(ask)}</span>
       </div>
       <div className="sliders">
-        <label>width {w}bps<input type="range" min="1" max="40" value={w} onChange={(e) => setW(+e.target.value)} /></label>
-        <label>skew {skew}bps<input type="range" min="-25" max="25" value={skew} onChange={(e) => setSkew(+e.target.value)} /></label>
+        <label>width {w}bps<input type="range" min="1" max="120" value={w} onChange={(e) => setW(+e.target.value)} /></label>
+        <label>skew {skew}bps<input type="range" min="-50" max="50" value={skew} onChange={(e) => setSkew(+e.target.value)} /></label>
       </div>
       <button className="send" onClick={() => sim.submitQuote(rfq.id, { bid, ask })}>stream quote</button>
       <div className="ttl"><span style={{ width: `${ttlPct}%` }} /></div>
@@ -157,14 +136,12 @@ function LiveQuotes({ sim }) {
   const { state } = sim
   if (!state.liveQuotes.length) return null
   return (
-    <div className="panel">
-      <div className="panel-h">Live quotes</div>
+    <>
+      <div className="sub-h">Live quotes</div>
       {state.liveQuotes.map((q) => {
         const ttlPct = Math.max(0, 100 - (q.ageTicks / q.ttlTicks) * 100)
-        const mid = (() => {
-          const v = sim.venuesForAsset(q.assetId)[0]
-          return sim.getBook(v)?.mid ?? (q.bid + q.ask) / 2
-        })()
+        const v = sim.venuesForAsset(q.assetId)[0]
+        const mid = sim.getBook(v)?.mid ?? (q.bid + q.ask) / 2
         const w = (q.ask - q.bid) / 2
         return (
           <div key={q.id} className="liveq">
@@ -177,23 +154,29 @@ function LiveQuotes({ sim }) {
           </div>
         )
       })}
-    </div>
+    </>
   )
 }
 
-function Positions({ sim }) {
+// ---- middle: positions / pnl / trades --------------------------------------
+function Positions({ sim, denom }) {
   const { state } = sim
-  const entries = Object.entries(state.positions).filter(([, q]) => Math.abs(q) > 1e-9)
+  const all = sim.session.current.assetIds()
   return (
     <div className="panel">
       <div className="panel-h">Positions <span className={`badge ${state.overInventory ? 'warn' : ''}`}>{usd(state.usdDelta)} Δ</span></div>
-      {entries.length === 0 && <div className="empty">flat</div>}
-      {entries.map(([a, q]) => (
-        <div key={a} className={`posrow ${q > 0 ? 'long' : 'short'}`}>
-          <span className="pa">{a}</span>
-          <span className="pq">{q > 0 ? '+' : '−'}{fmt(Math.abs(q), 3)}</span>
-        </div>
-      ))}
+      {all.every((a) => Math.abs(state.positions[a] ?? 0) < 1e-9) && <div className="empty">flat</div>}
+      {all.map((a) => {
+        const q = state.positions[a] ?? 0
+        if (Math.abs(q) < 1e-9) return null
+        const mid = sim.getBook(sim.venuesForAsset(a)[0])?.mid ?? 0
+        return (
+          <div key={a} className={`posrow ${q > 0 ? 'long' : 'short'}`}>
+            <span className="pa">{a}</span>
+            <span className="pq">{q > 0 ? '+' : '−'}{denom === 'usd' ? usdCompact(Math.abs(q * mid)) : fmt(Math.abs(q), 3)}</span>
+          </div>
+        )
+      })}
       {state.overInventory && <div className="inv-warn">⚠ over soft inventory limit</div>}
     </div>
   )
@@ -212,93 +195,74 @@ function Pnl({ state }) {
     <div className="panel">
       <div className="panel-h">P&amp;L</div>
       {rows.map(([k, v]) => (
-        <div key={k} className="pnlrow">
-          <span>{k}</span>
-          <span className={v >= 0 ? 'pos' : 'neg'}>{signedUsd(v)}</span>
-        </div>
+        <div key={k} className="pnlrow"><span>{k}</span><span className={v >= 0 ? 'pos' : 'neg'}>{signedUsd(v)}</span></div>
       ))}
-      <div className="pnlrow total">
-        <span>Total</span>
-        <span className={state.totalPnL >= 0 ? 'pos' : 'neg'}>{signedUsd(state.totalPnL)}</span>
-      </div>
+      <div className="pnlrow total"><span>Total</span><span className={state.totalPnL >= 0 ? 'pos' : 'neg'}>{signedUsd(state.totalPnL)}</span></div>
     </div>
   )
 }
 
-function HedgePanel({ sim }) {
-  const { state, activeAsset } = sim
-  const venues = sim.venuesForAsset(activeAsset)
-  const [vid, setVid] = useState(venues[0])
-  const v = venues.includes(vid) ? vid : venues[0]
-  const [size, setSize] = useState(0.5)
-  const [mode, setMode] = useState('market')
-  const [price, setPrice] = useState('')
-  const mid = sim.getBook(v)?.mid ?? 0
-  const limPrice = price === '' ? mid : Number(price)
-  const pos = state.positions[activeAsset] ?? 0
-  const myLimits = state.restingLimits.filter((l) => l.assetId === activeAsset)
-
-  return (
-    <div className="panel">
-      <div className="panel-h">
-        Hedge {activeAsset}
-        <span className="modetoggle">
-          <button className={mode === 'market' ? 'on' : ''} onClick={() => setMode('market')}>mkt</button>
-          <button className={mode === 'limit' ? 'on' : ''} onClick={() => setMode('limit')}>lim</button>
-        </span>
-      </div>
-      <select value={v} onChange={(e) => setVid(e.target.value)}>
-        {venues.map((x) => <option key={x} value={x}>{sim.venueInfo(x).tier} · {x.split(':')[0]}</option>)}
-      </select>
-      <input className="size-in" type="number" step="0.1" value={size} onChange={(e) => setSize(+e.target.value)} />
-      {mode === 'limit' && (
-        <input className="size-in" type="number" placeholder={`limit px (mid ${px(mid)})`} value={price} onChange={(e) => setPrice(e.target.value)} />
-      )}
-      <div className="hedge-btns">
-        {mode === 'market' ? (
-          <>
-            <button className="buy" onClick={() => sim.hedge({ assetId: activeAsset, venueId: v, side: 'buy', size: Math.abs(size) })}>buy</button>
-            <button className="sell" onClick={() => sim.hedge({ assetId: activeAsset, venueId: v, side: 'sell', size: Math.abs(size) })}>sell</button>
-          </>
-        ) : (
-          <>
-            <button className="buy" onClick={() => sim.placeLimitHedge({ assetId: activeAsset, venueId: v, side: 'buy', size: Math.abs(size), price: limPrice })}>rest buy</button>
-            <button className="sell" onClick={() => sim.placeLimitHedge({ assetId: activeAsset, venueId: v, side: 'sell', size: Math.abs(size), price: limPrice })}>rest sell</button>
-          </>
-        )}
-      </div>
-      {mode === 'market' && Math.abs(pos) > 1e-9 && (
-        <button className="flat" onClick={() => sim.hedge({ assetId: activeAsset, venueId: v, side: pos > 0 ? 'sell' : 'buy', size: Math.abs(pos) })}>
-          flatten ({pos > 0 ? 'sell' : 'buy'} {fmt(Math.abs(pos), 3)})
-        </button>
-      )}
-      {myLimits.length > 0 && (
-        <div className="limits">
-          {myLimits.map((l) => (
-            <div key={l.id} className={`limrow ${l.side}`}>
-              <span>{l.side} {fmt(l.size, 2)} @ {px(l.price)}</span>
-              <button onClick={() => sim.cancelLimitHedge(l.id)}>×</button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function TradesTape({ state }) {
+function Trades({ state, denom }) {
   const fills = (state.blotter || []).map((b) => ({ kind: 'fill', ...b }))
   const hedges = (state.hedgeLog || []).map((h) => ({ kind: 'hedge', ...h }))
-  const tape = [...fills, ...hedges].slice(-14).reverse()
+  const tape = [...fills, ...hedges].slice(-40).reverse()
   return (
-    <footer className="tape">
-      <span className="tape-h">Trades</span>
-      {tape.length === 0 && <span className="empty">no prints yet</span>}
-      {tape.map((t, i) => (
-        <span key={i} className={`print ${t.side === 'buy' ? 'buy' : 'sell'}`}>
-          {t.kind === 'fill' ? '◆' : '⌁'} {t.assetId} {t.side} {fmt(t.size, 2)} @ {px(t.price ?? t.vwap)}
-        </span>
-      ))}
-    </footer>
+    <div className="panel fill">
+      <div className="panel-h">Trades</div>
+      <div className="scroll tape-v">
+        {tape.length === 0 && <div className="empty">no prints yet</div>}
+        {tape.map((t, i) => {
+          const p = t.price ?? t.vwap
+          return (
+            <div key={i} className={`tprint ${t.side === 'buy' ? 'buy' : 'sell'}`}>
+              <span>{t.kind === 'fill' ? '◆ client' : '⌁ hedge'}</span>
+              <span>{t.assetId} {t.side} {denom === 'usd' ? usdCompact(t.size * p) : fmt(t.size, 2)}</span>
+              <span className="tpx">{px(p)}</span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ---- right: 2x2 asset books -------------------------------------------------
+function AssetBook({ sim, asset, denom }) {
+  const venues = sim.venuesForAsset(asset)
+  const dir = sim.dirs[asset]
+  const primary = venues[0]
+  const mid = sim.getBook(primary)?.mid ?? 0
+  const [size, setSize] = useState(0.5)
+  const [hv, setHv] = useState(primary)
+  const v = venues.includes(hv) ? hv : primary
+  const pos = sim.state.positions[asset] ?? 0
+  const sizeCoin = denom === 'usd' ? size / (mid || 1) : size
+
+  return (
+    <div className="abook">
+      <div className="abook-h">
+        <span className={`aname ${dir || ''}`}>{asset} {px(mid)} {dir === 'up' ? '▲' : dir === 'down' ? '▼' : ''}</span>
+        {Math.abs(pos) > 1e-9 && <span className={`apos ${pos > 0 ? 'long' : 'short'}`}>{pos > 0 ? '+' : '−'}{fmt(Math.abs(pos), 2)}</span>}
+      </div>
+      <div className="ladders">
+        {venues.map((vid) => (
+          <div key={vid} className="lwrap">
+            <div className="ltier">{sim.venueInfo(vid).tier}</div>
+            <Ladder snap={sim.getBook(vid)} dir={dir} denom={denom} compact depth={5} />
+          </div>
+        ))}
+      </div>
+      <div className="abook-hedge">
+        <select value={v} onChange={(e) => setHv(e.target.value)}>
+          {venues.map((x) => <option key={x} value={x}>{sim.venueInfo(x).tier}</option>)}
+        </select>
+        <input type="number" step="0.1" value={size} onChange={(e) => setSize(+e.target.value)} />
+        <button className="buy" onClick={() => sim.hedge({ assetId: asset, venueId: v, side: 'buy', size: Math.abs(sizeCoin) })}>buy</button>
+        <button className="sell" onClick={() => sim.hedge({ assetId: asset, venueId: v, side: 'sell', size: Math.abs(sizeCoin) })}>sell</button>
+        {Math.abs(pos) > 1e-9 && (
+          <button className="flat" onClick={() => sim.hedge({ assetId: asset, venueId: v, side: pos > 0 ? 'sell' : 'buy', size: Math.abs(pos) })}>flat</button>
+        )}
+      </div>
+    </div>
   )
 }
